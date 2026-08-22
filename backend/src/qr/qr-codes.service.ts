@@ -168,13 +168,16 @@ export class QrCodesService {
       throw new ForbiddenException('Cannot regenerate QR for an archived restaurant.');
     }
 
-    const qr = await this.prisma.$transaction(async (tx) => {
-      await tx.qrCode.updateMany({
-        where: { restaurantId, status: QrCodeStatus.ACTIVE },
-        data: { status: QrCodeStatus.DISABLED },
-      });
-      return this.qr.createPrimaryInTransaction(tx, restaurant);
-    });
+    const qr = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.qrCode.updateMany({
+          where: { restaurantId, status: QrCodeStatus.ACTIVE },
+          data: { status: QrCodeStatus.DISABLED },
+        });
+        return this.qr.createPrimaryInTransaction(tx, restaurant);
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
 
     auditLog('QR_REGENERATED', {
       restaurantId,

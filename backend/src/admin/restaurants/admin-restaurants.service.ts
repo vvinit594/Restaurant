@@ -141,85 +141,89 @@ export class AdminRestaurantsService {
     const coverImageUrl =
       restaurantInput.coverImageUrl || restaurantInput.coverUrl || '';
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const restaurant = await tx.restaurant.create({
-        data: {
-          name: restaurantInput.name.trim(),
-          slug,
-          description: restaurantInput.description?.trim() || null,
-          logoUrl: restaurantInput.logoUrl?.trim() || null,
-          coverImageUrl: coverImageUrl.trim() || null,
-          phone: restaurantInput.phone.trim(),
-          email: restaurantInput.email.trim().toLowerCase(),
-          address: restaurantInput.address.trim(),
-          city: restaurantInput.city.trim(),
-          state: restaurantInput.state?.trim() || null,
-          pincode: restaurantInput.pincode?.trim() || null,
-          status: RestaurantStatus.ACTIVE,
-          createdByUserId: adminUser.id,
-        },
-      });
+    // Supabase round-trips exceed Prisma's default 5s interactive tx timeout.
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        const restaurant = await tx.restaurant.create({
+          data: {
+            name: restaurantInput.name.trim(),
+            slug,
+            description: restaurantInput.description?.trim() || null,
+            logoUrl: restaurantInput.logoUrl?.trim() || null,
+            coverImageUrl: coverImageUrl.trim() || null,
+            phone: restaurantInput.phone.trim(),
+            email: restaurantInput.email.trim().toLowerCase(),
+            address: restaurantInput.address.trim(),
+            city: restaurantInput.city.trim(),
+            state: restaurantInput.state?.trim() || null,
+            pincode: restaurantInput.pincode?.trim() || null,
+            status: RestaurantStatus.ACTIVE,
+            createdByUserId: adminUser.id,
+          },
+        });
 
-      const owner = await tx.user.create({
-        data: {
-          name: ownerInput.name.trim(),
-          email: ownerEmail,
-          phone: ownerInput.phone?.trim() || null,
-          passwordHash,
-          role: UserRole.RESTAURANT_OWNER,
-          isActive: true,
-        },
-      });
+        const owner = await tx.user.create({
+          data: {
+            name: ownerInput.name.trim(),
+            email: ownerEmail,
+            phone: ownerInput.phone?.trim() || null,
+            passwordHash,
+            role: UserRole.RESTAURANT_OWNER,
+            isActive: true,
+          },
+        });
 
-      await tx.restaurantMembership.create({
-        data: {
-          userId: owner.id,
-          restaurantId: restaurant.id,
-          role: MembershipRole.RESTAURANT_OWNER,
-          isActive: true,
-        },
-      });
+        await tx.restaurantMembership.create({
+          data: {
+            userId: owner.id,
+            restaurantId: restaurant.id,
+            role: MembershipRole.RESTAURANT_OWNER,
+            isActive: true,
+          },
+        });
 
-      await tx.subscription.create({
-        data: {
-          restaurantId: restaurant.id,
-          planId: plan.id,
-          status: 'ACTIVE',
-        },
-      });
+        await tx.subscription.create({
+          data: {
+            restaurantId: restaurant.id,
+            planId: plan.id,
+            status: 'ACTIVE',
+          },
+        });
 
-      await tx.branch.create({
-        data: {
-          restaurantId: restaurant.id,
-          name: 'Main Branch',
-          isDefault: true,
-        },
-      });
+        await tx.branch.create({
+          data: {
+            restaurantId: restaurant.id,
+            name: 'Main Branch',
+            isDefault: true,
+          },
+        });
 
-      const defaultCategories = [
-        'South Indian',
-        'Starters',
-        'Main Course',
-        'Rice',
-        'Beverages',
-        'Desserts',
-      ];
-      await tx.category.createMany({
-        data: defaultCategories.map((name, index) => ({
-          restaurantId: restaurant.id,
-          name,
-          slug: name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, ''),
-          sortOrder: index + 1,
-        })),
-      });
+        const defaultCategories = [
+          'South Indian',
+          'Starters',
+          'Main Course',
+          'Rice',
+          'Beverages',
+          'Desserts',
+        ];
+        await tx.category.createMany({
+          data: defaultCategories.map((name, index) => ({
+            restaurantId: restaurant.id,
+            name,
+            slug: name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, ''),
+            sortOrder: index + 1,
+          })),
+        });
 
-      const qr = await this.qrService.createPrimaryInTransaction(tx, restaurant);
+        const qr = await this.qrService.createPrimaryInTransaction(tx, restaurant);
 
-      return { restaurant, owner, qr };
-    });
+        return { restaurant, owner, qr };
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
 
     auditLog('RESTAURANT_CREATED', {
       adminUserId: adminUser.id,
@@ -291,40 +295,43 @@ export class AdminRestaurantsService {
       throw new NotFoundException('Restaurant not found.');
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.restaurant.update({
-        where: { id },
-        data: {
-          deletedAt: new Date(),
-          status: RestaurantStatus.ARCHIVED,
-        },
-      });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.restaurant.update({
+          where: { id },
+          data: {
+            deletedAt: new Date(),
+            status: RestaurantStatus.ARCHIVED,
+          },
+        });
 
-      await tx.restaurantMembership.updateMany({
-        where: { restaurantId: id, isActive: true },
-        data: { isActive: false },
-      });
+        await tx.restaurantMembership.updateMany({
+          where: { restaurantId: id, isActive: true },
+          data: { isActive: false },
+        });
 
-      await tx.subscription.updateMany({
-        where: { restaurantId: id, status: 'ACTIVE' },
-        data: { status: 'CANCELLED' },
-      });
+        await tx.subscription.updateMany({
+          where: { restaurantId: id, status: 'ACTIVE' },
+          data: { status: 'CANCELLED' },
+        });
 
-      // Soft-hide menu so public/menu APIs ignore them if queried later
-      await tx.dish.updateMany({
-        where: { restaurantId: id, deletedAt: null },
-        data: {
-          deletedAt: new Date(),
-          isPublished: false,
-          isAvailable: false,
-        },
-      });
+        // Soft-hide menu so public/menu APIs ignore them if queried later
+        await tx.dish.updateMany({
+          where: { restaurantId: id, deletedAt: null },
+          data: {
+            deletedAt: new Date(),
+            isPublished: false,
+            isAvailable: false,
+          },
+        });
 
-      await tx.qrCode.updateMany({
-        where: { restaurantId: id, status: QrCodeStatus.ACTIVE },
-        data: { status: QrCodeStatus.DISABLED },
-      });
-    });
+        await tx.qrCode.updateMany({
+          where: { restaurantId: id, status: QrCodeStatus.ACTIVE },
+          data: { status: QrCodeStatus.DISABLED },
+        });
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
 
     auditLog('RESTAURANT_DELETED', {
       restaurantId: restaurant.id,
