@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dilyum-postgres
+    restart: unless-stopped
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dilyum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dilyum}
+      POSTGRES_DB: ${POSTGRES_DB:-dilyum}
+    volumes:
+      - dilyum_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-dilyum} -d ${POSTGRES_DB:-dilyum}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dilyum_pg_data:

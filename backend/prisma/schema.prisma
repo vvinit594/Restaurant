@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  RESTAURANT_OWNER
+  RESTAURANT_MANAGER
+  RESTAURANT_STAFF
+}
+
+enum RestaurantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipRole {
+  RESTAURANT_OWNER
+  RESTAURANT_MANAGER
+  RESTAURANT_STAFF
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+}
+
+enum QrCodeStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         UserRole
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships           RestaurantMembership[]
+  restaurantsCreated    Restaurant[]           @relation("RestaurantCreatedBy")
+
+  @@map("users")
+}
+
+model Restaurant {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  description     String?
+  logoUrl         String?
+  coverImageUrl   String?
+  phone           String
+  email           String
+  address         String
+  city            String
+  state           String?
+  pincode         String?
+  status          RestaurantStatus @default(ACTIVE)
+  createdByUserId String?
+  deletedAt       DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  createdBy     User?                    @relation("RestaurantCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  memberships   RestaurantMembership[]
+  subscriptions Subscription[]
+  branches      Branch[]
+  categories    Category[]
+  dishes        Dish[]
+  qrCodes       QrCode[]
+
+  @@index([createdByUserId])
+  @@map("restaurants")
+}
+
+model RestaurantMembership {
+  id           String         @id @default(cuid())
+  userId       String
+  restaurantId String
+  role         MembershipRole
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@index([restaurantId])
+  @@map("restaurant_memberships")
+}
+
+model SubscriptionPlan {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  priceLabel String
+  features   Json
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id           String             @id @default(cuid())
+  restaurantId String
+  planId       String
+  status       SubscriptionStatus @default(ACTIVE)
+  startedAt    DateTime           @default(now())
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  plan       SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([restaurantId])
+  @@map("subscriptions")
+}
+
+model Branch {
+  id           String   @id @default(cuid())
+  restaurantId String
+  name         String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@map("branches")
+}
+
+model Category {
+  id           String    @id @default(cuid())
+  restaurantId String
+  name         String
+  slug         String
+  sortOrder    Int       @default(0)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  dishes     Dish[]
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
+  @@map("categories")
+}
+
+model Dish {
+  id             String    @id @default(cuid())
+  restaurantId   String
+  categoryId     String
+  name           String
+  slug           String
+  description    String?
+  price          Decimal   @db.Decimal(10, 2)
+  imageUrl       String?
+  calories       Int?
+  protein        Float?
+  carbohydrates  Float?
+  fat            Float?
+  ingredients    String[]  @default([])
+  allergens      String[]  @default([])
+  isVeg          Boolean   @default(true)
+  isVegan        Boolean   @default(false)
+  isJain         Boolean   @default(false)
+  isAvailable    Boolean   @default(true)
+  isPublished    Boolean   @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category   Category   @relation(fields: [categoryId], references: [id])
+
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
+  @@index([categoryId])
+  @@map("dishes")
+}
+
+model QrCode {
+  id           String      @id @default(cuid())
+  restaurantId String
+  token        String      @unique
+  targetUrl    String
+  status       QrCodeStatus @default(ACTIVE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@map("qr_codes")
+}
