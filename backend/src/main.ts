@@ -36,15 +36,31 @@ async function bootstrap() {
     }),
   );
 
-  const allowedOrigins = (
-    config.get<string>('FRONTEND_ORIGIN') || 'http://localhost:3000'
-  )
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  const allowedOrigins = Array.from(
+    new Set(
+      [
+        'http://localhost:3000',
+        'https://dilyum.live',
+        'https://www.dilyum.live',
+        ...(config.get<string>('FRONTEND_ORIGIN') || '')
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean),
+      ],
+    ),
+  );
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (
+      requestOrigin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!requestOrigin || allowedOrigins.includes(requestOrigin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     credentials: true,
   });
 
