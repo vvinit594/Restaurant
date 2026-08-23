@@ -51,10 +51,33 @@ Customer QR destination (from `PUBLIC_WEB_URL`):
 
 `npm run prisma:seed` creates Super Admin + plans only — **no restaurants, no QR codes**.
 
+## Production env (Vercel)
+
+**Backend project** must set:
+
+- `DATABASE_URL` — Supabase (prefer pooler URL suitable for serverless)
+- `JWT_SECRET` — strong secret
+- `FRONTEND_ORIGIN` — `https://restaurant-8815.vercel.app,http://localhost:3000`
+- `PUBLIC_WEB_URL` — `https://restaurant-8815.vercel.app` (**never localhost in production**)
+
+**Frontend project** must set (build-time CRA vars):
+
+- `REACT_APP_API_URL` — `https://<backend>.vercel.app/api/v1`
+- `REACT_APP_PUBLIC_URL` — `https://restaurant-8815.vercel.app`
+
+After changing `PUBLIC_WEB_URL`, rewrite stored QR URLs:
+
+```bash
+node scripts/rewrite-qr-urls.js
+```
+
+Or click **Generate Missing QR** / **Regenerate** in Admin QR — API responses rebuild URLs from env even if DB was stale.
+
 ## Maintenance
 
 ```bash
 node scripts/backfill-qr-codes.js   # missing QRs for existing restaurants
+node scripts/rewrite-qr-urls.js     # fix localhost targetUrl → PUBLIC_WEB_URL
 node scripts/cleanup-test-restaurants.js
 ```
 

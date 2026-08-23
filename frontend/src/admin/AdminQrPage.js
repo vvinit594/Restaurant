@@ -6,6 +6,7 @@ import {
   getAdminQrList,
   regenerateAdminRestaurantQr,
 } from '../services/qrApi';
+import { resolveQrScanUrl } from '../services/qrUrl';
 import ConfirmDialog from './components/ConfirmDialog';
 import { useToast } from './components/Toast';
 
@@ -123,6 +124,7 @@ export default function AdminQrPage() {
             ) : (
               rows.map((row) => {
                 const qr = row.qr;
+                const scanUrl = qr ? resolveQrScanUrl(qr, row.slug) : '';
                 return (
                   <tr key={row.restaurantId}>
                     <td>
@@ -148,7 +150,7 @@ export default function AdminQrPage() {
                             <button
                               type="button"
                               className="admin-link-btn"
-                              onClick={() => setPreview(row)}
+                              onClick={() => setPreview({ ...row, scanUrl })}
                             >
                               Preview
                             </button>
@@ -156,17 +158,14 @@ export default function AdminQrPage() {
                               type="button"
                               className="admin-link-btn"
                               onClick={() =>
-                                downloadQrPng(
-                                  qr.targetUrl,
-                                  `${row.slug}-qr.png`,
-                                )
+                                downloadQrPng(scanUrl, `${row.slug}-qr.png`)
                               }
                             >
                               Download
                             </button>
                             <a
                               className="admin-link-btn"
-                              href={qr.targetUrl}
+                              href={scanUrl}
                               target="_blank"
                               rel="noreferrer"
                             >
@@ -215,10 +214,14 @@ export default function AdminQrPage() {
             <h3>{preview.name}</h3>
             <p className="admin-muted">Scan to open the public menu.</p>
             <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
-              <QrCodeImage value={preview.qr.targetUrl} size={240} alt={`${preview.name} QR`} />
+              <QrCodeImage
+                value={preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug)}
+                size={240}
+                alt={`${preview.name} QR`}
+              />
             </div>
             <p className="admin-cell-sub" style={{ wordBreak: 'break-all' }}>
-              {preview.qr.targetUrl}
+              {preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug)}
             </p>
             <div className="admin-modal-actions">
               <button type="button" className="admin-btn admin-btn-ghost" onClick={() => setPreview(null)}>
@@ -228,14 +231,17 @@ export default function AdminQrPage() {
                 type="button"
                 className="admin-btn admin-btn-secondary"
                 onClick={() =>
-                  downloadQrPng(preview.qr.targetUrl, `${preview.slug}-qr.png`)
+                  downloadQrPng(
+                    preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug),
+                    `${preview.slug}-qr.png`,
+                  )
                 }
               >
                 Download PNG
               </button>
               <a
                 className="admin-btn admin-btn-primary"
-                href={preview.qr.targetUrl}
+                href={preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug)}
                 target="_blank"
                 rel="noreferrer"
               >

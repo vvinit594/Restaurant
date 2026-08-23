@@ -22,16 +22,21 @@ export default function RestaurantMenuPage() {
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  const loadCategories = useCallback(async () => {
+    try {
+      const cats = await getCategories();
+      setCategories(cats);
+    } catch {
+      /* categories are secondary */
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [dishes, cats] = await Promise.all([
-        getRestaurantMenu({ search, category }),
-        getCategories(),
-      ]);
+      const dishes = await getRestaurantMenu({ search, category });
       setRows(dishes);
-      setCategories(cats);
     } catch (err) {
       setError(err.message || 'Failed to load menu.');
     } finally {
@@ -40,7 +45,11 @@ export default function RestaurantMenuPage() {
   }, [search, category]);
 
   useEffect(() => {
-    const t = setTimeout(load, 180);
+    loadCategories();
+  }, [loadCategories]);
+
+  useEffect(() => {
+    const t = setTimeout(load, 250);
     return () => clearTimeout(t);
   }, [load]);
 

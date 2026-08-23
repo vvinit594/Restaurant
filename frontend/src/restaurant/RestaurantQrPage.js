@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import QrCodeImage, { downloadQrPng } from '../components/QrCodeImage';
 import { getMyRestaurantQr, regenerateMyRestaurantQr } from '../services/qrApi';
+import { resolveQrScanUrl } from '../services/qrUrl';
 import ConfirmDialog from '../admin/components/ConfirmDialog';
 import { useToast } from '../admin/components/Toast';
 
@@ -62,6 +63,7 @@ export default function RestaurantQrPage() {
   }
 
   const { restaurant, qr } = data;
+  const scanUrl = resolveQrScanUrl(qr, restaurant.slug);
 
   return (
     <div className="admin-page">
@@ -77,25 +79,25 @@ export default function RestaurantQrPage() {
       <div className="admin-card" style={{ maxWidth: 480, margin: '0 auto', textAlign: 'center' }}>
         <h2 style={{ marginTop: 0 }}>{restaurant.name}</h2>
         <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0' }}>
-          <QrCodeImage value={qr.targetUrl} size={260} alt={`${restaurant.name} QR`} />
+          <QrCodeImage value={scanUrl} size={260} alt={`${restaurant.name} QR`} />
         </div>
         <p className="admin-muted">
           Scan this QR code to open your restaurant menu.
         </p>
         <p className="admin-cell-sub" style={{ wordBreak: 'break-all', marginBottom: 20 }}>
-          {qr.targetUrl}
+          {scanUrl}
         </p>
         <div className="admin-modal-actions" style={{ justifyContent: 'center' }}>
           <button
             type="button"
             className="admin-btn admin-btn-secondary"
-            onClick={() => downloadQrPng(qr.targetUrl, `${restaurant.slug}-qr.png`)}
+            onClick={() => downloadQrPng(scanUrl, `${restaurant.slug}-qr.png`)}
           >
             Download QR
           </button>
           <a
             className="admin-btn admin-btn-primary"
-            href={qr.targetUrl}
+            href={scanUrl}
             target="_blank"
             rel="noreferrer"
           >
@@ -118,8 +120,8 @@ export default function RestaurantQrPage() {
         confirmLabel="Regenerate"
         danger
         loading={busy}
-        onCancel={() => setConfirmRegen(false)}
         onConfirm={onRegenerate}
+        onCancel={() => setConfirmRegen(false)}
       />
     </div>
   );

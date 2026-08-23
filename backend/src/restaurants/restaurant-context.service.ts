@@ -30,7 +30,8 @@ export class RestaurantContextService {
       throw new UnauthorizedException('Authentication required.');
     }
 
-    const membership = await this.prisma.restaurantMembership.findFirst({
+    // Prefer JWT restaurantId, but fall back to any active membership (stale claim).
+    let membership = await this.prisma.restaurantMembership.findFirst({
       where: {
         userId: user.id,
         isActive: true,
@@ -39,6 +40,17 @@ export class RestaurantContextService {
       include: { restaurant: true },
       orderBy: { createdAt: 'asc' },
     });
+
+    if (
+      !membership &&
+      user.restaurantId
+    ) {
+      membership = await this.prisma.restaurantMembership.findFirst({
+        where: { userId: user.id, isActive: true },
+        include: { restaurant: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
 
     if (
       !membership ||

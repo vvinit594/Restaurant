@@ -33,7 +33,10 @@ export class QrCodesService {
     const existing = await this.prisma.qrCode.findFirst({
       where: { restaurantId, status: QrCodeStatus.ACTIVE },
     });
-    if (existing) return existing;
+    if (existing) {
+      await this.rewriteTargetUrlIfStale(existing, restaurant.slug);
+      return existing;
+    }
 
     const token = this.qr.newToken();
     const created = await this.prisma.qrCode.create({
@@ -54,6 +57,19 @@ export class QrCodesService {
     return created;
   }
 
+  /** Fix localhost / stale hosts stored before PUBLIC_WEB_URL was set. */
+  private async rewriteTargetUrlIfStale<
+    T extends { id: string; token: string; targetUrl: string },
+  >(qr: T, slug: string): Promise<T> {
+    if (!this.qr.needsTargetUrlRewrite(qr.targetUrl, slug, qr.token)) return qr;
+    const targetUrl = this.qr.buildTargetUrl(slug, qr.token);
+    const updated = await this.prisma.qrCode.update({
+      where: { id: qr.id },
+      data: { targetUrl },
+    });
+    return { ...qr, targetUrl: updated.targetUrl };
+  }
+
   async backfillMissing() {
     const restaurants = await this.prisma.restaurant.findMany({
       where: {
@@ -64,6 +80,7 @@ export class QrCodesService {
     });
 
     let created = 0;
+    let rewritten = 0;
     const results = [];
     for (const r of restaurants) {
       const before = await this.prisma.qrCode.findFirst({
@@ -71,15 +88,16 @@ export class QrCodesService {
       });
       const qr = await this.ensureActiveQr(r.id);
       if (!before) created += 1;
+      else if (before.targetUrl !== qr.targetUrl) rewritten += 1;
       results.push({
         restaurantId: r.id,
         name: r.name,
         slug: r.slug,
-        qr: this.qr.toPublicQr(qr),
+        qr: this.qr.toPublicQr(qr, r.slug),
       });
     }
 
-    return { created, total: results.length, restaurants: results };
+    return { created, rewritten, total: results.length, restaurants: results };
   }
 
   async listAdmin() {
@@ -89,7 +107,11 @@ export class QrCodesService {
         NOT: { status: RestaurantStatus.ARCHIVED },
       },
       orderBy: { name: 'asc' },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
         qrCodes: {
           where: { status: QrCodeStatus.ACTIVE },
           take: 1,
@@ -98,16 +120,21 @@ export class QrCodesService {
       },
     });
 
-    return restaurants.map((r) => {
-      const qr = r.qrCodes[0] || null;
-      return {
+    const out = [];
+    for (const r of restaurants) {
+      let qr = r.qrCodes[0] || null;
+      if (qr) {
+        qr = await this.rewriteTargetUrlIfStale(qr, r.slug);
+      }
+      out.push({
         restaurantId: r.id,
         name: r.name,
         slug: r.slug,
         status: r.status.toLowerCase(),
-        qr: qr ? this.qr.toPublicQr(qr) : null,
-      };
-    });
+        qr: qr ? this.qr.toPublicQr(qr, r.slug) : null,
+      });
+    }
+    return out;
   }
 
   async getAdminRestaurantQr(restaurantId: string) {
@@ -124,7 +151,7 @@ export class QrCodesService {
         slug: restaurant.slug,
         status: restaurant.status.toLowerCase(),
       },
-      qr: this.qr.toPublicQr(qr),
+      qr: this.qr.toPublicQr(qr, restaurant.slug),
     };
   }
 
@@ -144,7 +171,7 @@ export class QrCodesService {
         name: ctx.restaurantName,
         slug: ctx.restaurantSlug,
       },
-      qr: this.qr.toPublicQr(qr),
+      qr: this.qr.toPublicQr(qr, ctx.restaurantSlug),
     };
   }
 
@@ -192,7 +219,7 @@ export class QrCodesService {
         name: restaurant.name,
         slug: restaurant.slug,
       },
-      qr: this.qr.toPublicQr(qr),
+      qr: this.qr.toPublicQr(qr, restaurant.slug),
     };
   }
 
@@ -231,6 +258,8 @@ export class QrCodesService {
       throw new NotFoundException('QR code not found.');
     }
 
+    await this.rewriteTargetUrlIfStale(qr, restaurant.slug);
+
     const dishes = await this.prisma.dish.findMany({
       where: {
         restaurantId: restaurant.id,
@@ -238,8 +267,26 @@ export class QrCodesService {
         isPublished: true,
         isAvailable: true,
       },
-      include: { category: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        imageUrl: true,
+        calories: true,
+        protein: true,
+        carbohydrates: true,
+        fat: true,
+        ingredients: true,
+        allergens: true,
+        isVeg: true,
+        isVegan: true,
+        isJain: true,
+        category: { select: { name: true } },
+      },
       orderBy: { name: 'asc' },
+      take: 500,
     });
 
     const categories = [
@@ -283,7 +330,7 @@ export class QrCodesService {
       })),
       qr: {
         token: qr.token,
-        targetUrl: qr.targetUrl,
+        targetUrl: this.qr.buildTargetUrl(restaurant.slug, qr.token),
       },
     };
   }

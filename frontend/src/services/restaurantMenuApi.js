@@ -4,7 +4,6 @@
  * GET /api/v1/restaurants/me/categories
  */
 import {
-  getRestaurantSession,
   getRestaurantSessionSync,
   requirePermission,
   requireRestaurantSession,
@@ -22,7 +21,7 @@ function authHeaders() {
 }
 
 async function withSession(permissionKey) {
-  const session = await getRestaurantSession();
+  const session = getRestaurantSessionSync();
   if (permissionKey) requirePermission(session, permissionKey);
   else requireRestaurantSession(session);
   return session;

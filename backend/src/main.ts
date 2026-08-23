@@ -10,19 +10,12 @@ import { AppModule } from './app.module';
 const server = express();
 
 let appInitialized = false;
+let bootPromise: Promise<void> | null = null;
 
 async function bootstrap() {
-  if (appInitialized) {
-    return;
-  }
-
-  const app = await NestFactory.create(
-    AppModule,
-    new ExpressAdapter(server),
-    {
-      bodyParser: false,
-    },
-  );
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
+    bodyParser: false,
+  });
 
   const config = app.get(ConfigService);
 
@@ -44,44 +37,57 @@ async function bootstrap() {
   );
 
   const allowedOrigins = (
-    config.get<string>('FRONTEND_ORIGIN') ||
-    'http://localhost:3000'
+    config.get<string>('FRONTEND_ORIGIN') || 'http://localhost:3000'
   )
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-  
+
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,
   });
 
   await app.init();
-
   appInitialized = true;
-
-  return app;
 }
+
+/** Single-flight Nest init — required for Vercel cold starts. */
+function ensureApp(): Promise<void> {
+  if (appInitialized) return Promise.resolve();
+  if (!bootPromise) {
+    bootPromise = bootstrap().catch((err) => {
+      bootPromise = null;
+      appInitialized = false;
+      throw err;
+    });
+  }
+  return bootPromise;
+}
+
+// Gate every request until Nest is ready (fixes flaky 500/404 on cold start).
+server.use(async (_req, res, next) => {
+  try {
+    await ensureApp();
+    next();
+  } catch (err) {
+    console.error('Nest bootstrap failed:', err);
+    res.status(503).json({
+      statusCode: 503,
+      message: 'API is starting up. Retry in a moment.',
+    });
+  }
+});
 
 // Export the Express server for Vercel.
 export default server;
 
 // Local development only.
 if (!process.env.VERCEL) {
-  bootstrap().then(() => {
+  ensureApp().then(() => {
     const port = Number(process.env.PORT || 3001);
-
     server.listen(port, () => {
-      console.log(
-        `DilYum API listening on http://localhost:${port}/api/v1`,
-      );
+      console.log(`DilYum API listening on http://localhost:${port}/api/v1`);
     });
-  });
-}
-
-// Initialize the Nest application when running on Vercel.
-if (process.env.VERCEL) {
-  bootstrap().catch((error) => {
-    console.error('Failed to initialize NestJS application:', error);
   });
 }

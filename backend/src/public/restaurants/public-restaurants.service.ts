@@ -22,7 +22,20 @@ export class PublicRestaurantsService {
             }
           : {}),
       },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        city: true,
+        state: true,
+        address: true,
+        phone: true,
+      },
       orderBy: { name: 'asc' },
+      take: 100,
     });
 
     return restaurants.map((r) => this.toPublic(r));
@@ -36,6 +49,18 @@ export class PublicRestaurantsService {
         status: RestaurantStatus.ACTIVE,
         deletedAt: null,
       },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        city: true,
+        state: true,
+        address: true,
+        phone: true,
+      },
     });
     if (!restaurant) {
       throw new NotFoundException('Restaurant not found.');
@@ -48,8 +73,26 @@ export class PublicRestaurantsService {
         isPublished: true,
         isAvailable: true,
       },
-      include: { category: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        imageUrl: true,
+        calories: true,
+        protein: true,
+        carbohydrates: true,
+        fat: true,
+        ingredients: true,
+        allergens: true,
+        isVeg: true,
+        isVegan: true,
+        isJain: true,
+        category: { select: { name: true } },
+      },
       orderBy: { name: 'asc' },
+      take: 500,
     });
 
     const categories = [

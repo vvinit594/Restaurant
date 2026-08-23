@@ -96,8 +96,30 @@ export class RestaurantDishesService {
 
     const dishes = await this.prisma.dish.findMany({
       where,
-      include: { category: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        imageUrl: true,
+        calories: true,
+        protein: true,
+        carbohydrates: true,
+        fat: true,
+        ingredients: true,
+        allergens: true,
+        isVeg: true,
+        isVegan: true,
+        isJain: true,
+        isAvailable: true,
+        isPublished: true,
+        createdAt: true,
+        updatedAt: true,
+        category: { select: { id: true, name: true, slug: true } },
+      },
       orderBy: { name: 'asc' },
+      take: 500,
     });
 
     return dishes.map((d) => this.toClientDish(d));
