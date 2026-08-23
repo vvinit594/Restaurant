@@ -43,12 +43,16 @@ async function bootstrap() {
     }),
   );
 
-  const origin =
+  const allowedOrigins = (
     config.get<string>('FRONTEND_ORIGIN') ||
-    'http://localhost:3000';
-
+    'http://localhost:3000'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  
   app.enableCors({
-    origin,
+    origin: allowedOrigins,
     credentials: true,
   });
 
