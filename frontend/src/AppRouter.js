@@ -24,6 +24,7 @@ import RestaurantPlaceholder from './restaurant/RestaurantPlaceholder';
 import RestaurantProfilePage from './restaurant/RestaurantProfilePage';
 import RestaurantQrPage from './restaurant/RestaurantQrPage';
 import PublicRestaurantPage from './pages/PublicRestaurantPage';
+import RestaurantsListingPage from './pages/RestaurantsListingPage';
 
 export default function AppRouter() {
   return (
@@ -33,6 +34,7 @@ export default function AppRouter() {
           <ToastProvider>
             <Routes>
               <Route path="/" element={<CustomerApp />} />
+              <Route path="/restaurants" element={<RestaurantsListingPage />} />
 
               <Route path="/admin-login" element={<AdminLogin />} />
               <Route

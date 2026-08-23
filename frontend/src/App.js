@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { getImageUrl } from './dishImages';
 import SiteNavbar from './components/SiteNavbar';
@@ -85,16 +86,13 @@ function normalizeDish(dish) {
 }
 
 function App() {
+  const navigate = useNavigate();
   const [searchText, setSearchText] = useState("");
   const [selectedPriceRange, setSelectedPriceRange] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
   const scrollToSearch = () => {
-    const target = document.getElementById('menu-section');
-
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    navigate('/restaurants');
   };
 
   const priceRangeOptions = [
