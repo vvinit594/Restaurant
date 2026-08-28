@@ -71,8 +71,14 @@ export default function RestaurantDetailPage() {
     setSaving(true);
     try {
       const [logoUrl, coverUrl] = await Promise.all([
-        resolveImageUrl({ url: form.logoUrl, file: logoFile }, { folder: 'restaurants/logos' }),
-        resolveImageUrl({ url: form.coverUrl, file: coverFile }, { folder: 'restaurants/covers' }),
+        resolveImageUrl(
+          { url: form.logoUrl, file: logoFile },
+          { kind: 'logo', restaurantId },
+        ),
+        resolveImageUrl(
+          { url: form.coverUrl, file: coverFile },
+          { kind: 'cover', restaurantId },
+        ),
       ]);
       const updated = await updateRestaurant(restaurantId, {
         name: form.name,

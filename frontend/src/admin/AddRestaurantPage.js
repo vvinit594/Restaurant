@@ -91,15 +91,9 @@ export default function AddRestaurantPage() {
     setSubmitting(true);
     try {
       const [logoUrl, coverUrl] = await Promise.all([
-        resolveImageUrl({ url: form.logoUrl, file: logoFile }, { folder: 'restaurants/logos' }),
-        resolveImageUrl({ url: form.coverUrl, file: coverFile }, { folder: 'restaurants/covers' }),
+        resolveImageUrl({ url: form.logoUrl, file: logoFile }, { kind: 'logo' }),
+        resolveImageUrl({ url: form.coverUrl, file: coverFile }, { kind: 'cover' }),
       ]);
-
-      // Keep payloads under Nest body limit; prefer URL until cloud upload exists
-      const maxImageChars = 12 * 1024 * 1024;
-      if ((logoUrl && logoUrl.length > maxImageChars) || (coverUrl && coverUrl.length > maxImageChars)) {
-        throw new Error('Image is too large. Use a smaller image (under ~8 MB) or paste an image URL.');
-      }
 
       const created = await createRestaurant({
         restaurant: {

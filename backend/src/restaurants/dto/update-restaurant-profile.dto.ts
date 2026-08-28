@@ -5,6 +5,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
+import { IsHttpImageUrl } from '../../common/validators/is-http-image-url';
 
 function emptyToUndefined({ value }: { value: unknown }) {
   if (value === null || value === undefined) return undefined;
@@ -56,15 +57,18 @@ export class UpdateRestaurantProfileDto {
   @Transform(emptyToUndefined)
   @IsOptional()
   @IsString()
+  @IsHttpImageUrl()
   logoUrl?: string;
 
   @Transform(emptyToUndefined)
   @IsOptional()
   @IsString()
+  @IsHttpImageUrl()
   coverImageUrl?: string;
 
   @Transform(emptyToUndefined)
   @IsOptional()
   @IsString()
+  @IsHttpImageUrl()
   coverUrl?: string;
 }

@@ -74,14 +74,15 @@ export default function RestaurantProfilePage() {
     if (!canEdit) return;
     setSaving(true);
     try {
+      const restaurantId = user?.restaurantId;
       const [logoUrl, coverImageUrl] = await Promise.all([
         resolveImageUrl(
           { url: form.logoUrl, file: logoFile },
-          { folder: 'restaurants/logos' },
+          { kind: 'logo', restaurantId },
         ),
         resolveImageUrl(
           { url: form.coverUrl, file: coverFile },
-          { folder: 'restaurants/covers' },
+          { kind: 'cover', restaurantId },
         ),
       ]);
       const updated = await updateRestaurantProfile({

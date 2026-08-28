@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { AdminRestaurantsModule } from './admin/restaurants/admin-restaurants.module';
+import { MediaModule } from './media/media.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PublicRestaurantsModule } from './public/restaurants/public-restaurants.module';
 import { QrModule } from './qr/qr.module';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module';
     PublicRestaurantsModule,
     RestaurantDishesModule,
     QrModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

@@ -8,6 +8,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { IsHttpImageUrl } from '../../../common/validators/is-http-image-url';
 
 function emptyToUndefined({ value }: { value: unknown }) {
   if (value === null || value === undefined) return undefined;
@@ -43,6 +44,7 @@ export class CreateDishDto {
   @Transform(emptyToUndefined)
   @IsOptional()
   @IsString()
+  @IsHttpImageUrl()
   imageUrl?: string;
 
   @IsOptional()
@@ -135,6 +137,7 @@ export class UpdateDishDto {
   @Transform(emptyToUndefined)
   @IsOptional()
   @IsString()
+  @IsHttpImageUrl()
   imageUrl?: string;
 
   @IsOptional()

@@ -19,9 +19,9 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
 
-  // Allow logo/cover data URLs up to 15 MB.
-  app.use(json({ limit: '15mb' }));
-  app.use(urlencoded({ extended: true, limit: '15mb' }));
+  // Images go to Supabase Storage; JSON payloads only carry short URLs.
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
 
   app.setGlobalPrefix('api/v1');
 

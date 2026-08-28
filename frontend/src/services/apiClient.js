@@ -8,14 +8,21 @@ export function getApiBase() {
 
 export async function apiRequest(path, options = {}) {
   const { headers: optionHeaders, body, ...rest } = options;
+  const isFormData =
+    typeof FormData !== 'undefined' && body instanceof FormData;
+
+  const headers = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(optionHeaders || {}),
+  };
+  // Browser must set multipart boundary for FormData
+  if (isFormData) {
+    delete headers['Content-Type'];
+  }
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...rest,
-    // Merge headers last so Content-Type is never wiped by auth-only headers
-    headers: {
-      'Content-Type': 'application/json',
-      ...(optionHeaders || {}),
-    },
+    headers,
     body,
   });
 

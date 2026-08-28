@@ -112,7 +112,11 @@ export default function DishFormPage({ mode = 'create' }) {
     try {
       const imageUrl = await resolveImageUrl(
         { url: form.imageUrl, file: imageFile },
-        { folder: 'restaurants/dishes' }
+        {
+          kind: 'dish',
+          restaurantId: user?.restaurantId,
+          dishId: isEdit ? dishId : undefined,
+        },
       );
       const payload = {
         ...form,
