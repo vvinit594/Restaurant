@@ -72,8 +72,18 @@ export class AuthService {
         userId: user.id,
         isActive: true,
       },
-      include: {
-        restaurant: true,
+      select: {
+        restaurantId: true,
+        role: true,
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            status: true,
+            deletedAt: true,
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -138,14 +148,34 @@ export class AuthService {
             restaurantId: user.restaurantId,
             isActive: true,
           },
-          include: { restaurant: true },
+          select: {
+            restaurant: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                status: true,
+                deletedAt: true,
+              },
+            },
+          },
         })
       : null;
 
     if (!membership) {
       membership = await this.prisma.restaurantMembership.findFirst({
         where: { userId: user.id, isActive: true },
-        include: { restaurant: true },
+        select: {
+          restaurant: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              status: true,
+              deletedAt: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'asc' },
       });
     }

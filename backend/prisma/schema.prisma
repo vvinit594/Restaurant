@@ -82,6 +82,7 @@ model Restaurant {
   qrCodes       QrCode[]
 
   @@index([createdByUserId])
+  @@index([status, deletedAt])
   @@map("restaurants")
 }
 
@@ -99,6 +100,7 @@ model RestaurantMembership {
 
   @@unique([userId, restaurantId])
   @@index([restaurantId])
+  @@index([userId, isActive])
   @@map("restaurant_memberships")
 }
 
@@ -164,6 +166,7 @@ model Category {
 
   @@unique([restaurantId, slug])
   @@index([restaurantId])
+  @@index([restaurantId, isActive, sortOrder])
   @@map("categories")
 }
 
@@ -197,6 +200,7 @@ model Dish {
   @@unique([restaurantId, slug])
   @@index([restaurantId])
   @@index([categoryId])
+  @@index([restaurantId, deletedAt, isPublished, isAvailable])
   @@map("dishes")
 }
 

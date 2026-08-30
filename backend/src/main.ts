@@ -80,7 +80,7 @@ async function bootstrap() {
   );
 
   // Images go to Supabase Storage; JSON payloads only carry short URLs.
-  // Keep under Vercel serverless body limit (~4.5MB).
+  // Phase 1: keep 1mb global — enough for auth/CRUD JSON; not for Base64 images.
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
 

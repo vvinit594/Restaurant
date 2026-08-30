@@ -232,7 +232,28 @@ export class QrCodesService {
 
     const qr = await this.prisma.qrCode.findUnique({
       where: { token: normalized },
-      include: { restaurant: true },
+      select: {
+        id: true,
+        token: true,
+        status: true,
+        targetUrl: true,
+        restaurant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            logoUrl: true,
+            coverImageUrl: true,
+            city: true,
+            state: true,
+            address: true,
+            phone: true,
+            status: true,
+            deletedAt: true,
+          },
+        },
+      },
     });
 
     if (!qr || qr.status !== QrCodeStatus.ACTIVE) {
@@ -258,7 +279,8 @@ export class QrCodesService {
       throw new NotFoundException('QR code not found.');
     }
 
-    await this.rewriteTargetUrlIfStale(qr, restaurant.slug);
+    // Read-only public path: never rewrite/update QR rows on scan.
+    // Stale targetUrl fixes belong to admin backfill / rewrite scripts.
 
     const dishes = await this.prisma.dish.findMany({
       where: {

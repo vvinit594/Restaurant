@@ -18,6 +18,18 @@ export type RestaurantContext = {
   restaurantSlug: string;
 };
 
+const MEMBERSHIP_WITH_RESTAURANT = {
+  restaurant: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      status: true,
+      deletedAt: true,
+    },
+  },
+} as const;
+
 @Injectable()
 export class RestaurantContextService {
   constructor(private readonly prisma: PrismaService) {}
@@ -37,17 +49,22 @@ export class RestaurantContextService {
         isActive: true,
         ...(user.restaurantId ? { restaurantId: user.restaurantId } : {}),
       },
-      include: { restaurant: true },
+      select: {
+        restaurantId: true,
+        role: true,
+        ...MEMBERSHIP_WITH_RESTAURANT,
+      },
       orderBy: { createdAt: 'asc' },
     });
 
-    if (
-      !membership &&
-      user.restaurantId
-    ) {
+    if (!membership && user.restaurantId) {
       membership = await this.prisma.restaurantMembership.findFirst({
         where: { userId: user.id, isActive: true },
-        include: { restaurant: true },
+        select: {
+          restaurantId: true,
+          role: true,
+          ...MEMBERSHIP_WITH_RESTAURANT,
+        },
         orderBy: { createdAt: 'asc' },
       });
     }
