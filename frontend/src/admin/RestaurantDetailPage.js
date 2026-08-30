@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
-import { resolveImageUrl } from '../services/mediaApi';
+import { resolveImageUrlForSave } from '../services/mediaApi';
 import {
   activateRestaurant,
   getRestaurant,
@@ -71,11 +71,11 @@ export default function RestaurantDetailPage() {
     setSaving(true);
     try {
       const [logoUrl, coverUrl] = await Promise.all([
-        resolveImageUrl(
+        resolveImageUrlForSave(
           { url: form.logoUrl, file: logoFile },
           { kind: 'logo', restaurantId },
         ),
-        resolveImageUrl(
+        resolveImageUrlForSave(
           { url: form.coverUrl, file: coverFile },
           { kind: 'cover', restaurantId },
         ),
@@ -84,8 +84,8 @@ export default function RestaurantDetailPage() {
         name: form.name,
         slug: slugify(form.slug),
         description: form.description,
-        logoUrl,
-        coverUrl,
+        ...(logoUrl !== undefined ? { logoUrl } : {}),
+        ...(coverUrl !== undefined ? { coverUrl } : {}),
         phone: form.phone,
         email: form.email,
         address: form.address,

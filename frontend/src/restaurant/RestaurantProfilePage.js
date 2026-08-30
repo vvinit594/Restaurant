@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ImageUploadField from '../components/ImageUploadField';
-import { resolveImageUrl } from '../services/mediaApi';
+import { resolveImageUrlForSave } from '../services/mediaApi';
 import {
   getRestaurantProfile,
   updateRestaurantProfile,
@@ -75,17 +75,19 @@ export default function RestaurantProfilePage() {
     setSaving(true);
     try {
       const restaurantId = user?.restaurantId;
+      // Upload only changed files; leave legacy Base64 DB values untouched until migrated.
       const [logoUrl, coverImageUrl] = await Promise.all([
-        resolveImageUrl(
+        resolveImageUrlForSave(
           { url: form.logoUrl, file: logoFile },
           { kind: 'logo', restaurantId },
         ),
-        resolveImageUrl(
+        resolveImageUrlForSave(
           { url: form.coverUrl, file: coverFile },
           { kind: 'cover', restaurantId },
         ),
       ]);
-      const updated = await updateRestaurantProfile({
+
+      const payload = {
         name: form.name,
         description: form.description,
         phone: form.phone,
@@ -94,9 +96,11 @@ export default function RestaurantProfilePage() {
         city: form.city,
         state: form.state,
         pincode: form.pincode,
-        logoUrl,
-        coverImageUrl,
-      });
+      };
+      if (logoUrl !== undefined) payload.logoUrl = logoUrl;
+      if (coverImageUrl !== undefined) payload.coverImageUrl = coverImageUrl;
+
+      const updated = await updateRestaurantProfile(payload);
       setForm((prev) => ({
         ...prev,
         ...updated,

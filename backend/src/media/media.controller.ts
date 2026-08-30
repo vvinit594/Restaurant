@@ -22,7 +22,23 @@ export class MediaController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: { fileSize: 4 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const mime = String(file?.mimetype || '').toLowerCase();
+        const ok = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(
+          mime,
+        );
+        if (!ok) {
+          cb(
+            new BadRequestException(
+              'Unsupported image format. Please upload JPG, PNG, or WebP.',
+            ) as unknown as Error,
+            false,
+          );
+          return;
+        }
+        cb(null, true);
+      },
     }),
   )
   async upload(

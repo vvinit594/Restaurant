@@ -12,6 +12,7 @@ import { apiRequest } from './apiClient';
 import {
   validateImageFile,
   resolveImageUrl,
+  resolveImageUrlForSave,
   IMAGE_ERROR_FORMAT,
   IMAGE_ERROR_SIZE,
 } from './mediaApi';
@@ -26,7 +27,7 @@ beforeEach(() => {
   apiRequest.mockReset();
 });
 
-test('validateImageFile accepts jpeg/png/webp under 5MB', () => {
+test('validateImageFile accepts jpeg/png/webp under 4MB', () => {
   expect(validateImageFile(fakeFile({ name: 'a.jpg', type: 'image/jpeg', size: 100 })).ok).toBe(true);
   expect(validateImageFile(fakeFile({ name: 'a.png', type: 'image/png', size: 100 })).ok).toBe(true);
   expect(validateImageFile(fakeFile({ name: 'a.webp', type: 'image/webp', size: 100 })).ok).toBe(true);
@@ -39,7 +40,7 @@ test('validateImageFile rejects svg/pdf/oversize', () => {
   expect(bad.message).toBe(IMAGE_ERROR_FORMAT);
 
   const huge = validateImageFile(
-    fakeFile({ name: 'big.jpg', type: 'image/jpeg', size: 6 * 1024 * 1024 })
+    fakeFile({ name: 'big.jpg', type: 'image/jpeg', size: 5 * 1024 * 1024 })
   );
   expect(huge.ok).toBe(false);
   expect(huge.message).toBe(IMAGE_ERROR_SIZE);
@@ -76,4 +77,34 @@ test('resolveImageUrl uploads file via API (no Base64)', async () => {
   );
   const callBody = apiRequest.mock.calls[0][1].body;
   expect(callBody).toBeInstanceOf(FormData);
+});
+
+test('resolveImageUrlForSave skips legacy data URLs and only uploads new files', async () => {
+  expect(
+    await resolveImageUrlForSave({
+      url: 'data:image/png;base64,abc',
+      file: null,
+    }),
+  ).toBeUndefined();
+
+  expect(
+    await resolveImageUrlForSave({
+      url: 'https://cdn.example.com/x.jpg',
+      file: null,
+    }),
+  ).toBe('https://cdn.example.com/x.jpg');
+
+  expect(apiRequest).not.toHaveBeenCalled();
+
+  const file = fakeFile({ name: 'logo.png', type: 'image/png', size: 16 });
+  apiRequest.mockResolvedValue({
+    url: 'https://example.supabase.co/storage/v1/object/public/media/restaurants/r1/logo/x.png',
+    storageKey: 'restaurants/r1/logo/x.png',
+  });
+  const uploaded = await resolveImageUrlForSave(
+    { url: 'data:image/png;base64,old', file },
+    { kind: 'logo', restaurantId: 'r1', token: 'test-token' },
+  );
+  expect(uploaded).toMatch(/^https:\/\//);
+  expect(apiRequest).toHaveBeenCalledTimes(1);
 });

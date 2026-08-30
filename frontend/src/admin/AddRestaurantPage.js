@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
-import { resolveImageUrl } from '../services/mediaApi';
+import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { createRestaurant, getSubscriptionPlans } from '../services/restaurantsApi';
 import { slugify } from '../services/adminStorage';
@@ -91,24 +91,26 @@ export default function AddRestaurantPage() {
     setSubmitting(true);
     try {
       const [logoUrl, coverUrl] = await Promise.all([
-        resolveImageUrl({ url: form.logoUrl, file: logoFile }, { kind: 'logo' }),
-        resolveImageUrl({ url: form.coverUrl, file: coverFile }, { kind: 'cover' }),
+        resolveImageUrlForSave({ url: form.logoUrl, file: logoFile }, { kind: 'logo' }),
+        resolveImageUrlForSave({ url: form.coverUrl, file: coverFile }, { kind: 'cover' }),
       ]);
 
+      const restaurant = {
+        name: form.name,
+        slug: slugify(form.slug || form.name),
+        description: form.description,
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+        city: form.city,
+        state: form.state,
+        pincode: form.pincode,
+      };
+      if (logoUrl) restaurant.logoUrl = logoUrl;
+      if (coverUrl) restaurant.coverUrl = coverUrl;
+
       const created = await createRestaurant({
-        restaurant: {
-          name: form.name,
-          slug: slugify(form.slug || form.name),
-          description: form.description,
-          logoUrl,
-          coverUrl,
-          phone: form.phone,
-          email: form.email,
-          address: form.address,
-          city: form.city,
-          state: form.state,
-          pincode: form.pincode,
-        },
+        restaurant,
         owner: {
           name: form.adminName,
           email: form.adminEmail,

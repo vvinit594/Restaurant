@@ -7,10 +7,11 @@ import { apiRequest } from './apiClient';
 import { getRestaurantSessionSync } from './restaurantAuth';
 
 export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/*,.jpg,.jpeg,.png,.webp';
-export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+/** Stay under Vercel serverless body limit (~4.5MB). */
+export const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 export const IMAGE_ERROR_FORMAT =
   'Unsupported image format. Please upload JPG, PNG, or WebP.';
-export const IMAGE_ERROR_SIZE = 'Image must be smaller than 5MB.';
+export const IMAGE_ERROR_SIZE = 'Image must be smaller than 4MB.';
 /** Generic fallback used by older callers/tests. */
 export const IMAGE_ERROR = IMAGE_ERROR_FORMAT;
 
@@ -40,6 +41,10 @@ export function validateImageFile(file) {
   return { ok: true };
 }
 
+export function isHttpImageUrl(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+}
+
 function authHeaders(options = {}) {
   const token =
     options.token ||
@@ -56,7 +61,7 @@ function authHeaders(options = {}) {
 /**
  * Upload binary File to backend → Supabase Storage.
  * @param {File} file
- * @param {{ folder?: string, kind?: string, restaurantId?: string, dishId?: string }} [options]
+ * @param {{ folder?: string, kind?: string, restaurantId?: string, dishId?: string, token?: string }} [options]
  * @returns {Promise<{ url: string, storageKey: string }>}
  */
 export async function uploadImage(file, options = {}) {
@@ -92,10 +97,12 @@ export async function uploadImage(file, options = {}) {
 }
 
 /**
- * Prefer uploaded file over pasted URL. Migrates legacy data: URLs on save.
- * Never returns a device path.
+ * Prefer uploaded file over pasted URL.
+ * Does NOT re-upload or migrate legacy data: URLs (that can exceed Vercel
+ * body limits and surface as CORS "Failed to fetch"). Use the migration script.
+ *
  * @param {{ url?: string, file?: File | null }} source
- * @param {{ folder?: string, kind?: string, restaurantId?: string, dishId?: string }} [options]
+ * @param {{ folder?: string, kind?: string, restaurantId?: string, dishId?: string, token?: string }} [options]
  * @returns {Promise<string>}
  */
 export async function resolveImageUrl(source, options) {
@@ -103,20 +110,27 @@ export async function resolveImageUrl(source, options) {
     const uploaded = await uploadImage(source.file, options);
     return uploaded.url;
   }
+  return String(source?.url || '').trim();
+}
 
-  const url = String(source?.url || '').trim();
-  if (url.startsWith('data:image/')) {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const ext =
-      (blob.type && blob.type.split('/')[1]) ||
-      'jpg';
-    const file = new File([blob], `migrated.${ext}`, {
-      type: blob.type || 'image/jpeg',
-    });
-    const uploaded = await uploadImage(file, options);
+/**
+ * Build image field for a PATCH payload:
+ * - new File → upload, return Storage URL
+ * - https URL → keep
+ * - empty → clear (empty string)
+ * - legacy data: / other → omit (undefined) so DB row is left unchanged
+ *
+ * @param {{ url?: string, file?: File | null }} source
+ * @param {object} [options]
+ * @returns {Promise<string|undefined>}
+ */
+export async function resolveImageUrlForSave(source, options) {
+  if (source?.file) {
+    const uploaded = await uploadImage(source.file, options);
     return uploaded.url;
   }
-
-  return url;
+  const url = String(source?.url || '').trim();
+  if (!url) return '';
+  if (isHttpImageUrl(url)) return url;
+  return undefined;
 }

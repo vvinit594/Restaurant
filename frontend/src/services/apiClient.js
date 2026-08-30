@@ -20,11 +20,20 @@ export async function apiRequest(path, options = {}) {
     delete headers['Content-Type'];
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...rest,
-    headers,
-    body,
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...rest,
+      headers,
+      body,
+    });
+  } catch {
+    const err = new Error(
+      'Could not reach the API. If you are uploading an image, use JPG/PNG/WebP under 4MB.',
+    );
+    err.code = 'NETWORK';
+    throw err;
+  }
 
   let data = null;
   const text = await res.text();

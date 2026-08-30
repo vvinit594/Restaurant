@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
-import { resolveImageUrl } from '../services/mediaApi';
+import { resolveImageUrlForSave } from '../services/mediaApi';
 import {
   createMenuItem,
   getCategories,
@@ -110,7 +110,7 @@ export default function DishFormPage({ mode = 'create' }) {
     if (!validate()) return;
     setSubmitting(true);
     try {
-      const imageUrl = await resolveImageUrl(
+      const imageUrl = await resolveImageUrlForSave(
         { url: form.imageUrl, file: imageFile },
         {
           kind: 'dish',
@@ -120,9 +120,10 @@ export default function DishFormPage({ mode = 'create' }) {
       );
       const payload = {
         ...form,
-        imageUrl,
         price: Number(form.price),
       };
+      if (imageUrl !== undefined) payload.imageUrl = imageUrl;
+      else delete payload.imageUrl;
       if (isEdit) {
         await updateMenuItem(dishId, payload);
         push('Dish updated.');

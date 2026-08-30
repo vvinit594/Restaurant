@@ -13,8 +13,10 @@ const ALLOWED_MIME = new Set([
   'image/png',
   'image/webp',
 ]);
-const MAX_BYTES = 5 * 1024 * 1024;
+/** Stay under Vercel serverless request body limit (~4.5MB). */
+const MAX_BYTES = 4 * 1024 * 1024;
 const BUCKET = 'media';
+const SIZE_ERROR = 'Image must be smaller than 4MB.';
 
 @Injectable()
 export class MediaService {
@@ -47,7 +49,7 @@ export class MediaService {
       throw new BadRequestException('Image file is required.');
     }
     if (file.size > MAX_BYTES) {
-      throw new BadRequestException('Image must be smaller than 5MB.');
+      throw new BadRequestException(SIZE_ERROR);
     }
     const mime = String(file.mimetype || '').toLowerCase();
     if (!ALLOWED_MIME.has(mime)) {

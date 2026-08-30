@@ -2,15 +2,72 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, type Request, type Response, type NextFunction } from 'express';
 import express from 'express';
+import { config as loadEnv } from 'dotenv';
 
 import { AppModule } from './app.module';
+
+// Local .env before reading FRONTEND_ORIGIN for early CORS.
+loadEnv();
 
 const server = express();
 
 let appInitialized = false;
 let bootPromise: Promise<void> | null = null;
+
+const DEFAULT_ORIGINS = [
+  'http://localhost:3000',
+  'https://dilyum.live',
+  'https://www.dilyum.live',
+];
+
+function buildAllowedOrigins(frontendOriginEnv?: string) {
+  return Array.from(
+    new Set([
+      ...DEFAULT_ORIGINS,
+      ...(frontendOriginEnv || '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ]),
+  );
+}
+
+/**
+ * Apply CORS on the raw Express app before Nest boots / handles the request.
+ * Ensures OPTIONS preflight and error responses (incl. cold-start 503) always
+ * carry Access-Control-Allow-Origin for allowed frontends — never '*'.
+ */
+function applyExpressCors(allowedOrigins: string[]) {
+  server.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Vary', 'Origin');
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.setHeader(
+        'Access-Control-Allow-Methods',
+        'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      );
+      const requested = req.headers['access-control-request-headers'];
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        typeof requested === 'string' && requested.trim()
+          ? requested
+          : 'Authorization,Content-Type,Accept',
+      );
+      res.setHeader('Access-Control-Max-Age', '86400');
+      res.status(204).end();
+      return;
+    }
+
+    next();
+  });
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
@@ -18,8 +75,12 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
+  const allowedOrigins = buildAllowedOrigins(
+    config.get<string>('FRONTEND_ORIGIN'),
+  );
 
   // Images go to Supabase Storage; JSON payloads only carry short URLs.
+  // Keep under Vercel serverless body limit (~4.5MB).
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
 
@@ -36,20 +97,6 @@ async function bootstrap() {
     }),
   );
 
-  const allowedOrigins = Array.from(
-    new Set(
-      [
-        'http://localhost:3000',
-        'https://dilyum.live',
-        'https://www.dilyum.live',
-        ...(config.get<string>('FRONTEND_ORIGIN') || '')
-          .split(',')
-          .map((o) => o.trim())
-          .filter(Boolean),
-      ],
-    ),
-  );
-
   app.enableCors({
     origin: (
       requestOrigin: string | undefined,
@@ -62,6 +109,8 @@ async function bootstrap() {
       callback(null, false);
     },
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
   });
 
   await app.init();
@@ -81,13 +130,17 @@ function ensureApp(): Promise<void> {
   return bootPromise;
 }
 
+// CORS must run before the bootstrap gate so preflight/503 always get headers.
+applyExpressCors(buildAllowedOrigins(process.env.FRONTEND_ORIGIN));
+
 // Gate every request until Nest is ready (fixes flaky 500/404 on cold start).
-server.use(async (_req, res, next) => {
+server.use(async (req, res, next) => {
   try {
     await ensureApp();
     next();
   } catch (err) {
     console.error('Nest bootstrap failed:', err);
+    // CORS headers already set by applyExpressCors when Origin is allowed.
     res.status(503).json({
       statusCode: 503,
       message: 'API is starting up. Retry in a moment.',
