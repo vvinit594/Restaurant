@@ -165,6 +165,70 @@ export class MediaService {
     return { url, storageKey, bucket: BUCKET };
   }
 
+  /**
+   * Create a short-lived signed upload URL so the browser can PUT the file
+   * directly to Supabase Storage (never through Vercel body limits / multipart).
+   */
+  async createSignedUpload(
+    meta: {
+      folder?: string;
+      restaurantId?: string;
+      dishId?: string;
+      kind?: string;
+      contentType?: string;
+      fileName?: string;
+      fileSize?: number;
+    } = {},
+  ) {
+    const mime = String(meta.contentType || '').toLowerCase();
+    if (!ALLOWED_MIME.has(mime)) {
+      throw new BadRequestException(
+        'Unsupported image format. Please upload JPG, PNG, or WebP.',
+      );
+    }
+    const size = Number(meta.fileSize);
+    if (Number.isFinite(size) && size > MAX_BYTES) {
+      throw new BadRequestException(SIZE_ERROR);
+    }
+
+    const client = this.getClient();
+    await this.ensurePublicBucket(client);
+    const storageKey = this.buildObjectKey({
+      folder: meta.folder,
+      restaurantId: meta.restaurantId,
+      dishId: meta.dishId,
+      kind: meta.kind,
+      mime,
+      originalName: meta.fileName,
+    });
+
+    const { data, error } = await client.storage
+      .from(BUCKET)
+      .createSignedUploadUrl(storageKey);
+
+    if (error || !data?.signedUrl) {
+      throw new BadRequestException(
+        error?.message || 'Could not create signed upload URL.',
+      );
+    }
+
+    const { data: pub } = client.storage.from(BUCKET).getPublicUrl(storageKey);
+    const publicUrl = pub?.publicUrl;
+    if (!publicUrl) {
+      throw new BadRequestException('Signed URL created but public URL was missing.');
+    }
+
+    return {
+      uploadUrl: data.signedUrl,
+      token: data.token,
+      path: data.path || storageKey,
+      storageKey,
+      publicUrl,
+      bucket: BUCKET,
+      contentType: mime,
+    };
+  }
+
   /** Decode data-URL / raw base64 and upload. Used by migration only. */
   async uploadBase64(
     dataUrlOrBase64: string,

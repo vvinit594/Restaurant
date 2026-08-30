@@ -18,6 +18,36 @@ import { MediaService } from './media.service';
 export class MediaController {
   constructor(private readonly media: MediaService) {}
 
+  /**
+   * Preferred upload path for browsers: tiny JSON → signed Supabase URL.
+   * File bytes never pass through Vercel (avoids multipart/CORS/413 issues).
+   */
+  @Post('sign-upload')
+  async signUpload(
+    @Body()
+    body: {
+      folder?: string;
+      kind?: string;
+      restaurantId?: string;
+      dishId?: string;
+      contentType?: string;
+      fileName?: string;
+      fileSize?: number;
+    },
+    @CurrentUser() _user: { id: string },
+  ) {
+    return this.media.createSignedUpload({
+      folder: body?.folder,
+      kind: body?.kind,
+      restaurantId: body?.restaurantId,
+      dishId: body?.dishId,
+      contentType: body?.contentType,
+      fileName: body?.fileName,
+      fileSize: body?.fileSize,
+    });
+  }
+
+  /** Legacy multipart upload (server-side / scripts). Prefer sign-upload for browsers. */
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {

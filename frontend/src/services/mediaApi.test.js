@@ -25,6 +25,7 @@ function fakeFile({ name, type, size }) {
 
 beforeEach(() => {
   apiRequest.mockReset();
+  global.fetch = jest.fn();
 });
 
 test('validateImageFile accepts jpeg/png/webp under 3MB', () => {
@@ -54,15 +55,20 @@ test('resolveImageUrl returns URL when no file', async () => {
   expect(fromUrl).toBe('https://cdn.example.com/dish.jpg');
 });
 
-test('resolveImageUrl uploads file via API (no Base64)', async () => {
+test('resolveImageUrl signs then PUTs file to storage (no multipart to API)', async () => {
   const file = fakeFile({ name: 'dish.png', type: 'image/png', size: 32 });
   const storageUrl =
     'https://example.supabase.co/storage/v1/object/public/media/dishes/r1/d1/x.png';
+  const uploadUrl =
+    'https://example.supabase.co/storage/v1/object/upload/sign/media/dishes/r1/d1/x.png?token=abc';
 
   apiRequest.mockResolvedValue({
-    url: storageUrl,
+    uploadUrl,
+    token: 'upload-token',
+    publicUrl: storageUrl,
     storageKey: 'dishes/r1/d1/x.png',
   });
+  global.fetch.mockResolvedValue({ ok: true, text: async () => '' });
 
   const fromFile = await resolveImageUrl(
     { url: 'https://cdn.example.com/old.jpg', file },
@@ -72,11 +78,16 @@ test('resolveImageUrl uploads file via API (no Base64)', async () => {
   expect(fromFile).toBe(storageUrl);
   expect(fromFile.startsWith('data:')).toBe(false);
   expect(apiRequest).toHaveBeenCalledWith(
-    '/media/upload',
+    '/media/sign-upload',
     expect.objectContaining({ method: 'POST' }),
   );
-  const callBody = apiRequest.mock.calls[0][1].body;
-  expect(callBody).toBeInstanceOf(FormData);
+  const signBody = JSON.parse(apiRequest.mock.calls[0][1].body);
+  expect(signBody.contentType).toBe('image/png');
+  expect(signBody.kind).toBe('dish');
+  expect(global.fetch).toHaveBeenCalledWith(
+    uploadUrl,
+    expect.objectContaining({ method: 'PUT', body: file }),
+  );
 });
 
 test('resolveImageUrlForSave skips legacy data URLs and only uploads new files', async () => {
@@ -98,13 +109,19 @@ test('resolveImageUrlForSave skips legacy data URLs and only uploads new files',
 
   const file = fakeFile({ name: 'logo.png', type: 'image/png', size: 16 });
   apiRequest.mockResolvedValue({
-    url: 'https://example.supabase.co/storage/v1/object/public/media/restaurants/r1/logo/x.png',
+    uploadUrl: 'https://example.supabase.co/upload',
+    token: 't',
+    publicUrl:
+      'https://example.supabase.co/storage/v1/object/public/media/restaurants/r1/logo/x.png',
     storageKey: 'restaurants/r1/logo/x.png',
   });
+  global.fetch.mockResolvedValue({ ok: true, text: async () => '' });
+
   const uploaded = await resolveImageUrlForSave(
     { url: 'data:image/png;base64,old', file },
     { kind: 'logo', restaurantId: 'r1', token: 'test-token' },
   );
   expect(uploaded).toMatch(/^https:\/\//);
   expect(apiRequest).toHaveBeenCalledTimes(1);
+  expect(apiRequest.mock.calls[0][0]).toBe('/media/sign-upload');
 });

@@ -1,18 +1,16 @@
 /**
- * Media upload — binary file → POST /api/v1/media/upload → Supabase Storage URL.
- * Never converts images to Base64 for persistence.
+ * Media upload — sign with API (JSON) → PUT file to Supabase Storage → public URL.
+ * File bytes never go through the Nest/Vercel API (avoids multipart CORS/413 failures).
  */
 import { getAdminSessionSync } from './adminAuth';
 import { apiRequest } from './apiClient';
 import { getRestaurantSessionSync } from './restaurantAuth';
 
 export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/*,.jpg,.jpeg,.png,.webp';
-/** Stay under Vercel serverless body limit (~4.5MB including multipart overhead). */
 export const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
 export const IMAGE_ERROR_FORMAT =
   'Unsupported image format. Please upload JPG, PNG, or WebP.';
 export const IMAGE_ERROR_SIZE = 'Image must be smaller than 3MB.';
-/** Generic fallback used by older callers/tests. */
 export const IMAGE_ERROR = IMAGE_ERROR_FORMAT;
 
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -58,8 +56,17 @@ function authHeaders(options = {}) {
   return { Authorization: `Bearer ${token}` };
 }
 
+function guessContentType(file) {
+  const t = String(file?.type || '').toLowerCase();
+  if (ALLOWED_TYPES.has(t)) return t;
+  const name = String(file?.name || '');
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  return 'image/jpeg';
+}
+
 /**
- * Upload binary File to backend → Supabase Storage.
+ * Upload binary File via signed Supabase URL (not through /media/upload multipart).
  * @param {File} file
  * @param {{ folder?: string, kind?: string, restaurantId?: string, dishId?: string, token?: string }} [options]
  * @returns {Promise<{ url: string, storageKey: string }>}
@@ -72,35 +79,67 @@ export async function uploadImage(file, options = {}) {
     throw err;
   }
 
-  const form = new FormData();
-  form.append('file', file);
-  if (options.folder) form.append('folder', options.folder);
-  if (options.kind) form.append('kind', options.kind);
-  if (options.restaurantId) form.append('restaurantId', options.restaurantId);
-  if (options.dishId) form.append('dishId', options.dishId);
-
-  const data = await apiRequest('/media/upload', {
+  const contentType = guessContentType(file);
+  const signed = await apiRequest('/media/sign-upload', {
     method: 'POST',
     headers: authHeaders(options),
-    body: form,
+    body: JSON.stringify({
+      folder: options.folder || undefined,
+      kind: options.kind || undefined,
+      restaurantId: options.restaurantId || undefined,
+      dishId: options.dishId || undefined,
+      contentType,
+      fileName: file.name || 'upload.jpg',
+      fileSize: file.size,
+    }),
   });
 
-  const url = String(data?.url || '').trim();
-  if (!url || !/^https?:\/\//i.test(url)) {
-    throw new Error('Upload succeeded but no image URL was returned.');
+  const uploadUrl = String(signed?.uploadUrl || '').trim();
+  const publicUrl = String(signed?.publicUrl || signed?.url || '').trim();
+  const storageKey = String(signed?.storageKey || signed?.path || '').trim();
+  if (!uploadUrl || !publicUrl) {
+    throw new Error('Upload signing failed — no storage URL returned.');
+  }
+
+  const putHeaders = {
+    'Content-Type': contentType,
+  };
+  if (signed.token) {
+    putHeaders.Authorization = `Bearer ${signed.token}`;
+  }
+
+  let putRes;
+  try {
+    putRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: putHeaders,
+      body: file,
+    });
+  } catch {
+    const err = new Error(
+      'Could not upload image to storage. Check your network and try again.',
+    );
+    err.code = 'NETWORK';
+    throw err;
+  }
+
+  if (!putRes.ok) {
+    const detail = await putRes.text().catch(() => '');
+    const err = new Error(
+      detail || `Storage upload failed (${putRes.status}).`,
+    );
+    err.code = 'VALIDATION';
+    throw err;
   }
 
   return {
-    url,
-    storageKey: String(data?.storageKey || ''),
+    url: publicUrl,
+    storageKey,
   };
 }
 
 /**
  * Prefer uploaded file over pasted URL.
- * Does NOT re-upload or migrate legacy data: URLs (that can exceed Vercel
- * body limits and surface as CORS "Failed to fetch"). Use the migration script.
- *
  * @param {{ url?: string, file?: File | null }} source
  * @param {{ folder?: string, kind?: string, restaurantId?: string, dishId?: string, token?: string }} [options]
  * @returns {Promise<string>}
@@ -114,11 +153,11 @@ export async function resolveImageUrl(source, options) {
 }
 
 /**
- * Build image field for a PATCH payload:
- * - new File → upload, return Storage URL
+ * Build image field for a PATCH/create payload:
+ * - new File → signed upload → Storage URL
  * - https URL → keep
- * - empty → clear (empty string)
- * - legacy data: / other → omit (undefined) so DB row is left unchanged
+ * - empty → clear
+ * - legacy data: → omit (undefined)
  *
  * @param {{ url?: string, file?: File | null }} source
  * @param {object} [options]
