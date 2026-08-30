@@ -217,7 +217,11 @@ export class RestaurantDishesService {
         ...(dto.description !== undefined
           ? { description: dto.description?.trim() || null }
           : {}),
-        ...(dto.price !== undefined ? { price: dto.price } : {}),
+        ...(dto.price !== undefined &&
+        dto.price !== null &&
+        Number.isFinite(Number(dto.price))
+          ? { price: Number(dto.price) }
+          : {}),
         ...(dto.imageUrl !== undefined
           ? { imageUrl: dto.imageUrl?.trim() || null }
           : {}),

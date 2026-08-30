@@ -33,6 +33,7 @@ function optionalNumber(value) {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/** Full create body (all primary fields). */
 function toDishPayload(payload) {
   const body = {
     name: String(payload.name || '').trim(),
@@ -53,6 +54,49 @@ function toDishPayload(payload) {
     available: payload.available !== false,
     published: payload.published !== false,
   };
+  Object.keys(body).forEach((k) => {
+    if (body[k] === undefined) delete body[k];
+  });
+  return body;
+}
+
+/**
+ * Partial PATCH body — only keys present on `payload`.
+ * Avoids sending price:null / forced booleans that break Prisma on toggles.
+ */
+function toDishUpdatePayload(payload) {
+  const body = {};
+  if (payload.name !== undefined) body.name = String(payload.name || '').trim();
+  if (payload.price !== undefined) {
+    const price = optionalNumber(payload.price);
+    if (price !== undefined) body.price = price;
+  }
+  if (payload.category !== undefined) {
+    body.category = String(payload.category || '').trim() || undefined;
+  }
+  if (payload.categoryId !== undefined) body.categoryId = payload.categoryId || undefined;
+  if (payload.description !== undefined) {
+    body.description = String(payload.description || '').trim();
+  }
+  if (payload.imageUrl !== undefined) {
+    body.imageUrl = String(payload.imageUrl || '').trim() || undefined;
+  }
+  if (payload.calories !== undefined) body.calories = optionalNumber(payload.calories);
+  if (payload.protein !== undefined) body.protein = optionalNumber(payload.protein);
+  if (payload.carbohydrates !== undefined) {
+    body.carbohydrates = optionalNumber(payload.carbohydrates);
+  }
+  if (payload.fat !== undefined) body.fat = optionalNumber(payload.fat);
+  if (payload.ingredients !== undefined) body.ingredients = payload.ingredients;
+  if (payload.allergens !== undefined) body.allergens = payload.allergens;
+  if (payload.isVeg !== undefined) body.isVeg = Boolean(payload.isVeg);
+  if (payload.isVegan !== undefined) body.isVegan = Boolean(payload.isVegan);
+  if (payload.isJain !== undefined) body.isJain = Boolean(payload.isJain);
+  if (payload.available !== undefined) body.available = Boolean(payload.available);
+  if (payload.published !== undefined) body.published = Boolean(payload.published);
+  if (payload.isAvailable !== undefined) body.isAvailable = Boolean(payload.isAvailable);
+  if (payload.isPublished !== undefined) body.isPublished = Boolean(payload.isPublished);
+
   Object.keys(body).forEach((k) => {
     if (body[k] === undefined) delete body[k];
   });
@@ -161,7 +205,7 @@ export async function updateMenuItem(dishId, payload) {
   return apiRequest(`/restaurants/me/dishes/${encodeURIComponent(dishId)}`, {
     method: 'PATCH',
     headers: authHeaders(),
-    body: JSON.stringify(toDishPayload(payload)),
+    body: JSON.stringify(toDishUpdatePayload(payload)),
   });
 }
 
