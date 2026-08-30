@@ -7,11 +7,11 @@ import { apiRequest } from './apiClient';
 import { getRestaurantSessionSync } from './restaurantAuth';
 
 export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/*,.jpg,.jpeg,.png,.webp';
-/** Stay under Vercel serverless body limit (~4.5MB). */
-export const IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+/** Stay under Vercel serverless body limit (~4.5MB including multipart overhead). */
+export const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
 export const IMAGE_ERROR_FORMAT =
   'Unsupported image format. Please upload JPG, PNG, or WebP.';
-export const IMAGE_ERROR_SIZE = 'Image must be smaller than 4MB.';
+export const IMAGE_ERROR_SIZE = 'Image must be smaller than 3MB.';
 /** Generic fallback used by older callers/tests. */
 export const IMAGE_ERROR = IMAGE_ERROR_FORMAT;
 

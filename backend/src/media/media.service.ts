@@ -13,10 +13,10 @@ const ALLOWED_MIME = new Set([
   'image/png',
   'image/webp',
 ]);
-/** Stay under Vercel serverless request body limit (~4.5MB). */
-const MAX_BYTES = 4 * 1024 * 1024;
+/** Stay under Vercel serverless body limit (~4.5MB including multipart overhead). */
+const MAX_BYTES = 3 * 1024 * 1024;
 const BUCKET = 'media';
-const SIZE_ERROR = 'Image must be smaller than 4MB.';
+const SIZE_ERROR = 'Image must be smaller than 3MB.';
 
 @Injectable()
 export class MediaService {

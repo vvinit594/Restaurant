@@ -27,7 +27,7 @@ beforeEach(() => {
   apiRequest.mockReset();
 });
 
-test('validateImageFile accepts jpeg/png/webp under 4MB', () => {
+test('validateImageFile accepts jpeg/png/webp under 3MB', () => {
   expect(validateImageFile(fakeFile({ name: 'a.jpg', type: 'image/jpeg', size: 100 })).ok).toBe(true);
   expect(validateImageFile(fakeFile({ name: 'a.png', type: 'image/png', size: 100 })).ok).toBe(true);
   expect(validateImageFile(fakeFile({ name: 'a.webp', type: 'image/webp', size: 100 })).ok).toBe(true);
@@ -40,7 +40,7 @@ test('validateImageFile rejects svg/pdf/oversize', () => {
   expect(bad.message).toBe(IMAGE_ERROR_FORMAT);
 
   const huge = validateImageFile(
-    fakeFile({ name: 'big.jpg', type: 'image/jpeg', size: 5 * 1024 * 1024 })
+    fakeFile({ name: 'big.jpg', type: 'image/jpeg', size: 4 * 1024 * 1024 })
   );
   expect(huge.ok).toBe(false);
   expect(huge.message).toBe(IMAGE_ERROR_SIZE);
