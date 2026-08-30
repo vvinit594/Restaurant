@@ -82,3 +82,60 @@ test('super admin login stores session and can load empty restaurants', async ()
   await adminLogout();
   expect(await getAdminSession()).toBeNull();
 });
+
+test('updateRestaurant PATCHes admin restaurants and returns updated entity', async () => {
+  await adminLogin({
+    email: 'vvinit594@gmail.com',
+    password: 'Admin@123',
+  });
+
+  global.fetch = jest.fn(async (url, options = {}) => {
+    const path = String(url);
+    const json = (status, body) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      text: async () => JSON.stringify(body),
+    });
+    if (path.includes('/admin/restaurants/rest_1') && options.method === 'PATCH') {
+      const body = JSON.parse(options.body || '{}');
+      expect(body.name).toBe('Updated Cafe');
+      expect(body.description).toBe('New description');
+      expect(options.headers?.Authorization).toContain('test_jwt');
+      return json(200, {
+        id: 'rest_1',
+        name: body.name,
+        slug: body.slug || 'updated-cafe',
+        description: body.description,
+        phone: body.phone,
+        email: body.email,
+        address: body.address,
+        city: body.city,
+        state: body.state || '',
+        pincode: body.pincode || '',
+        logoUrl: '',
+        coverUrl: '',
+        status: 'active',
+        admin: body.admin
+          ? { ...body.admin, id: 'owner_1', status: 'active', role: 'RESTAURANT_OWNER' }
+          : null,
+      });
+    }
+    return json(404, { message: 'Not found' });
+  });
+
+  const { updateRestaurant } = await import('./restaurantsApi');
+  const updated = await updateRestaurant('rest_1', {
+    name: 'Updated Cafe',
+    slug: 'updated-cafe',
+    description: 'New description',
+    phone: '9999999999',
+    email: 'cafe@example.com',
+    address: '1 Main St',
+    city: 'Hyderabad',
+    state: 'TS',
+    pincode: '500001',
+    admin: { name: 'Owner', email: 'owner@example.com', phone: '888' },
+  });
+  expect(updated.name).toBe('Updated Cafe');
+  expect(updated.description).toBe('New description');
+});

@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AdminRestaurantsService } from './admin-restaurants.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
+import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 
 @Controller('admin/restaurants')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -72,6 +73,15 @@ export class AdminRestaurantsController {
       RestaurantStatus.ACTIVE,
       user,
     );
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpdateRestaurantDto,
+  ) {
+    return this.restaurantsService.update(id, dto, user);
   }
 
   @Delete(':id')

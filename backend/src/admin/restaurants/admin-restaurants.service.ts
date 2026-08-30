@@ -16,6 +16,31 @@ import { auditLog } from '../../common/audit-log';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QrService } from '../../qr/qr.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
+import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+
+const OWNER_INCLUDE = {
+  subscriptions: {
+    where: { status: 'ACTIVE' as const },
+    take: 1,
+    include: { plan: true },
+  },
+  memberships: {
+    where: { role: MembershipRole.RESTAURANT_OWNER, isActive: true },
+    take: 1,
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          isActive: true,
+        },
+      },
+    },
+  },
+} as const;
 
 @Injectable()
 export class AdminRestaurantsService {
@@ -257,34 +282,145 @@ export class AdminRestaurantsService {
   async getOne(id: string) {
     const restaurant = await this.prisma.restaurant.findFirst({
       where: { id, deletedAt: null },
+      include: OWNER_INCLUDE,
+    });
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found.');
+    }
+    return this.toAdminListItem(restaurant);
+  }
+
+  async update(
+    id: string,
+    dto: UpdateRestaurantDto,
+    actor?: { id: string },
+  ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id, deletedAt: null },
       include: {
-        subscriptions: {
-          where: { status: 'ACTIVE' },
-          take: 1,
-          include: { plan: true },
-        },
         memberships: {
           where: { role: MembershipRole.RESTAURANT_OWNER, isActive: true },
           take: 1,
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-                role: true,
-                isActive: true,
-              },
-            },
-          },
+          include: { user: { select: { id: true, email: true } } },
         },
       },
     });
     if (!restaurant) {
       throw new NotFoundException('Restaurant not found.');
     }
-    return this.toAdminListItem(restaurant);
+
+    if (dto.slug && dto.slug !== restaurant.slug) {
+      const slugClash = await this.prisma.restaurant.findFirst({
+        where: { slug: dto.slug, NOT: { id } },
+      });
+      if (slugClash) {
+        throw new ConflictException(
+          'A restaurant with this slug already exists.',
+        );
+      }
+    }
+
+    if (dto.email) {
+      const email = dto.email.trim().toLowerCase();
+      const emailClash = await this.prisma.restaurant.findFirst({
+        where: {
+          email,
+          deletedAt: null,
+          NOT: { id },
+        },
+      });
+      if (emailClash) {
+        throw new BadRequestException(
+          'Another restaurant already uses this email.',
+        );
+      }
+    }
+
+    const owner = restaurant.memberships[0]?.user;
+    if (dto.admin?.email && owner) {
+      const adminEmail = dto.admin.email.trim().toLowerCase();
+      if (adminEmail !== owner.email) {
+        const userClash = await this.prisma.user.findFirst({
+          where: { email: adminEmail, NOT: { id: owner.id } },
+        });
+        if (userClash) {
+          throw new ConflictException(
+            'An account with this email already exists.',
+          );
+        }
+      }
+    }
+
+    const coverImageUrl =
+      dto.coverImageUrl !== undefined
+        ? dto.coverImageUrl
+        : dto.coverUrl !== undefined
+          ? dto.coverUrl
+          : undefined;
+
+    const updated = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.restaurant.update({
+          where: { id },
+          data: {
+            ...(dto.name != null ? { name: dto.name.trim() } : {}),
+            ...(dto.slug != null ? { slug: dto.slug } : {}),
+            ...(dto.description !== undefined
+              ? { description: dto.description?.trim() || null }
+              : {}),
+            ...(dto.logoUrl !== undefined
+              ? { logoUrl: dto.logoUrl?.trim() || null }
+              : {}),
+            ...(coverImageUrl !== undefined
+              ? { coverImageUrl: coverImageUrl?.trim() || null }
+              : {}),
+            ...(dto.phone != null ? { phone: dto.phone.trim() } : {}),
+            ...(dto.email != null
+              ? { email: dto.email.trim().toLowerCase() }
+              : {}),
+            ...(dto.address != null ? { address: dto.address.trim() } : {}),
+            ...(dto.city != null ? { city: dto.city.trim() } : {}),
+            ...(dto.state !== undefined
+              ? { state: dto.state?.trim() || null }
+              : {}),
+            ...(dto.pincode !== undefined
+              ? { pincode: dto.pincode?.trim() || null }
+              : {}),
+          },
+        });
+
+        if (dto.admin && owner) {
+          await tx.user.update({
+            where: { id: owner.id },
+            data: {
+              ...(dto.admin.name != null
+                ? { name: dto.admin.name.trim() }
+                : {}),
+              ...(dto.admin.email != null
+                ? { email: dto.admin.email.trim().toLowerCase() }
+                : {}),
+              ...(dto.admin.phone !== undefined
+                ? { phone: dto.admin.phone?.trim() || null }
+                : {}),
+            },
+          });
+        }
+
+        return tx.restaurant.findFirstOrThrow({
+          where: { id },
+          include: OWNER_INCLUDE,
+        });
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
+
+    auditLog('RESTAURANT_UPDATED', {
+      restaurantId: updated.id,
+      restaurantSlug: updated.slug,
+      adminUserId: actor?.id || null,
+    });
+
+    return this.toAdminListItem(updated);
   }
 
   async softDelete(id: string, actor?: { id: string }) {

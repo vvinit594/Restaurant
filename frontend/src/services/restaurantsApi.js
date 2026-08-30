@@ -136,8 +136,59 @@ export function ensureRestaurantsSeeded() {
 }
 
 export async function updateRestaurant(restaurantId, payload) {
-  // Full update API is Phase 2+; keep shape for detail page until wired.
-  const err = new Error('Restaurant update API will be available in the next phase.');
-  err.code = 'NOT_IMPLEMENTED';
-  throw err;
+  const body = {
+    name: payload.name != null ? String(payload.name).trim() : undefined,
+    slug: payload.slug != null ? slugify(payload.slug) : undefined,
+    description:
+      payload.description !== undefined
+        ? String(payload.description || '').trim()
+        : undefined,
+    logoUrl: payload.logoUrl,
+    coverImageUrl: payload.coverImageUrl || payload.coverUrl,
+    coverUrl: payload.coverUrl,
+    phone: payload.phone != null ? String(payload.phone).trim() : undefined,
+    email:
+      payload.email != null
+        ? String(payload.email).trim().toLowerCase()
+        : undefined,
+    address:
+      payload.address != null ? String(payload.address).trim() : undefined,
+    city: payload.city != null ? String(payload.city).trim() : undefined,
+    state: payload.state !== undefined ? String(payload.state || '').trim() : undefined,
+    pincode:
+      payload.pincode !== undefined
+        ? String(payload.pincode || '').trim()
+        : undefined,
+  };
+
+  if (payload.admin) {
+    body.admin = {
+      name:
+        payload.admin.name != null
+          ? String(payload.admin.name).trim()
+          : undefined,
+      email:
+        payload.admin.email != null
+          ? String(payload.admin.email).trim().toLowerCase()
+          : undefined,
+      phone:
+        payload.admin.phone !== undefined
+          ? String(payload.admin.phone || '').trim()
+          : undefined,
+    };
+    Object.keys(body.admin).forEach((k) => {
+      if (body.admin[k] === undefined) delete body.admin[k];
+    });
+    if (!Object.keys(body.admin).length) delete body.admin;
+  }
+
+  Object.keys(body).forEach((k) => {
+    if (body[k] === undefined) delete body[k];
+  });
+
+  return apiRequest(`/admin/restaurants/${restaurantId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
 }

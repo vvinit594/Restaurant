@@ -99,6 +99,24 @@ export default function RestaurantDetailPage() {
         },
       });
       setRestaurant(updated);
+      setForm({
+        name: updated.name,
+        slug: updated.slug,
+        description: updated.description || '',
+        logoUrl: updated.logoUrl || '',
+        coverUrl: updated.coverUrl || '',
+        phone: updated.phone,
+        email: updated.email,
+        address: updated.address,
+        city: updated.city,
+        state: updated.state || '',
+        pincode: updated.pincode || '',
+        adminName: updated.admin?.name || '',
+        adminEmail: updated.admin?.email || '',
+        adminPhone: updated.admin?.phone || '',
+      });
+      setLogoFile(null);
+      setCoverFile(null);
       push('Restaurant updated.');
       setSearchParams({});
     } catch (err) {
