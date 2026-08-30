@@ -528,19 +528,15 @@ function HeroSection({ onExploreMenu }) {
   useEffect(() => {
     if (reducedMotion) return undefined;
 
+    // Load on mobile and desktop; still defer slightly so first paint isn't blocked.
+    // Respect Save-Data / very slow networks only.
     const connection =
       navigator.connection ||
       navigator.mozConnection ||
       navigator.webkitConnection;
     const saveData = Boolean(connection?.saveData);
     const slowNet = /2g/.test(String(connection?.effectiveType || ''));
-    const isNarrow =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(max-width: 768px)').matches;
-
-    // Mobile / Save-Data / slow networks: poster-only (no ~1.4MB mp4 download).
-    // No separate mobile video asset exists in /public.
-    if (isNarrow || saveData || slowNet) return undefined;
+    if (saveData || slowNet) return undefined;
 
     let cancelled = false;
     const enable = () => {
