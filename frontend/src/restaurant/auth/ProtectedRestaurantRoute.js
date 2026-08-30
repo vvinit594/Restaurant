@@ -1,5 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import Loader from '../../components/Loader';
 import { useRestaurantAuth } from './RestaurantAuthContext';
 
 export default function ProtectedRestaurantRoute({ children, permission }) {
@@ -7,11 +8,7 @@ export default function ProtectedRestaurantRoute({ children, permission }) {
   const location = useLocation();
 
   if (bootstrapping) {
-    return (
-      <div className="admin-boot">
-        <div className="admin-boot-card">Checking restaurant session…</div>
-      </div>
-    );
+    return <Loader variant="fullscreen" label="Checking restaurant session…" />;
   }
 
   if (!isAuthenticated) {

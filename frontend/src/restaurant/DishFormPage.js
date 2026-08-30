@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
+import Loader from '../components/Loader';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import {
   createMenuItem,
@@ -142,8 +143,7 @@ export default function DishFormPage({ mode = 'create' }) {
   if (loading) {
     return (
       <div className="admin-page">
-        <div className="admin-skeleton admin-skeleton-lg" />
-        <div className="admin-skeleton admin-mt" />
+        <Loader label="Loading dish…" />
       </div>
     );
   }

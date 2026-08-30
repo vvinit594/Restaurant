@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import Loader from '../components/Loader';
 import QrCodeImage, { downloadQrPng } from '../components/QrCodeImage';
 import { getMyRestaurantQr, regenerateMyRestaurantQr } from '../services/qrApi';
 import { resolveQrScanUrl } from '../services/qrUrl';
@@ -47,8 +48,7 @@ export default function RestaurantQrPage() {
   if (loading) {
     return (
       <div className="admin-page">
-        <div className="admin-skeleton admin-skeleton-lg" />
-        <div className="admin-skeleton admin-mt" />
+        <Loader label="Loading QR…" />
       </div>
     );
   }

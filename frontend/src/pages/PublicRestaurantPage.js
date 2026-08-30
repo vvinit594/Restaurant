@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import Fuse from 'fuse.js';
+import Loader from '../components/Loader';
 import SiteNavbar from '../components/SiteNavbar';
 import { getPublicRestaurantBySlug } from '../services/publicRestaurantsApi';
 import { resolvePublicQr } from '../services/qrApi';
@@ -106,8 +107,7 @@ export default function PublicRestaurantPage() {
       <div className="app public-restaurant-page">
         <SiteNavbar />
         <div className="public-rest-loading">
-          <div className="restaurants-popup-skeleton" />
-          <div className="restaurants-popup-skeleton" />
+          <Loader label="Loading restaurant…" />
         </div>
       </div>
     );

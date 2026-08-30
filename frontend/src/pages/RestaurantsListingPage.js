@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import SiteNavbar from '../components/SiteNavbar';
 import { getPublicRestaurants } from '../services/publicRestaurantsApi';
 
@@ -73,23 +74,6 @@ function RestaurantCard({ restaurant }) {
   );
 }
 
-function RestaurantCardSkeleton() {
-  return (
-    <div className="restaurant-card restaurant-card-skeleton" aria-hidden="true">
-      <div className="restaurant-card-cover skeleton-block" />
-      <div className="restaurant-card-body">
-        <div className="restaurant-card-header">
-          <div className="skeleton-line skeleton-line-lg" />
-          <div className="skeleton-avatar" />
-        </div>
-        <div className="skeleton-line skeleton-line-sm" />
-        <div className="skeleton-line" />
-        <div className="skeleton-line skeleton-line-md" />
-      </div>
-    </div>
-  );
-}
-
 export default function RestaurantsListingPage() {
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -126,10 +110,8 @@ export default function RestaurantsListingPage() {
         </header>
 
         {loading ? (
-          <div className="restaurant-grid" aria-busy="true" aria-label="Loading restaurants">
-            <RestaurantCardSkeleton />
-            <RestaurantCardSkeleton />
-            <RestaurantCardSkeleton />
+          <div aria-busy="true" aria-label="Loading restaurants">
+            <Loader label="Loading restaurants…" />
           </div>
         ) : null}
 

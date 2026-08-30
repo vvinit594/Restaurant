@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Loader from '../components/Loader';
 import {
   deleteMenuItem,
   getCategories,
@@ -123,9 +124,11 @@ export default function RestaurantMenuPage() {
           </thead>
           <tbody>
             {loading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <tr key={i}><td colSpan={5}><div className="admin-skeleton" /></td></tr>
-              ))
+              <tr>
+                <td colSpan={5}>
+                  <Loader variant="inline" label="Loading dishes…" />
+                </td>
+              </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={5}>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import { useAdminAuth } from './auth/AdminAuthContext';
 
 export default function AdminLogin() {
@@ -13,7 +14,11 @@ export default function AdminLogin() {
 
   const from = location.state?.from || '/admin';
 
-  if (!bootstrapping && isAuthenticated && isSuperAdmin) {
+  if (bootstrapping) {
+    return <Loader variant="fullscreen" label="Checking admin session…" />;
+  }
+
+  if (isAuthenticated && isSuperAdmin) {
     return <Navigate to="/admin" replace />;
   }
 

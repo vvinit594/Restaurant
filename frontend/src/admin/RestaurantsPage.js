@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import {
   activateRestaurant,
   deleteRestaurant,
@@ -147,11 +148,11 @@ export default function RestaurantsPage() {
           </thead>
           <tbody>
             {loading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <tr key={i}>
-                  <td colSpan={7}><div className="admin-skeleton" /></td>
-                </tr>
-              ))
+              <tr>
+                <td colSpan={7}>
+                  <Loader variant="inline" label="Loading restaurants…" />
+                </td>
+              </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={7}>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import { useRestaurantAuth } from './auth/RestaurantAuthContext';
 
 export default function RestaurantLogin() {
@@ -14,7 +15,11 @@ export default function RestaurantLogin() {
 
   const from = location.state?.from || '/restaurant/dashboard';
 
-  if (!bootstrapping && isAuthenticated) {
+  if (bootstrapping) {
+    return <Loader variant="fullscreen" label="Checking restaurant session…" />;
+  }
+
+  if (isAuthenticated) {
     return <Navigate to="/restaurant/dashboard" replace />;
   }
 

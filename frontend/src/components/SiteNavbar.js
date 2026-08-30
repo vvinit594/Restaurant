@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Loader from './Loader';
 import { getPublicRestaurants } from '../services/publicRestaurantsApi';
 import { useRestaurantAuth } from '../restaurant/auth/RestaurantAuthContext';
 
@@ -125,11 +126,7 @@ export default function SiteNavbar() {
 
               <div className="restaurants-popup-list">
                 {loading ? (
-                  <>
-                    <div className="restaurants-popup-skeleton" />
-                    <div className="restaurants-popup-skeleton" />
-                    <div className="restaurants-popup-skeleton" />
-                  </>
+                  <Loader variant="inline" label="Loading restaurants…" />
                 ) : error ? (
                   <p className="restaurants-popup-empty">{error}</p>
                 ) : filtered.length === 0 ? (

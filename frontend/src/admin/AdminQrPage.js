@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Loader from '../components/Loader';
 import QrCodeImage, { downloadQrPng } from '../components/QrCodeImage';
 import {
   backfillAdminQr,
@@ -101,13 +102,11 @@ export default function AdminQrPage() {
           </thead>
           <tbody>
             {loading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <tr key={i}>
-                  <td colSpan={4}>
-                    <div className="admin-skeleton" />
-                  </td>
-                </tr>
-              ))
+              <tr>
+                <td colSpan={4}>
+                  <Loader variant="inline" label="Loading QR codes…" />
+                </td>
+              </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={4}>

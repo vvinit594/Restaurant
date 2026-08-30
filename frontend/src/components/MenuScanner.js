@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import Loader from './Loader';
 
 function MenuScanner({ onUpload, scanning, onCameraClick }) {
   const fileInputRef = useRef(null);
@@ -29,12 +30,11 @@ function MenuScanner({ onUpload, scanning, onCameraClick }) {
             <button className="camera-button" onClick={onCameraClick}>
               📷 Use Camera / Webcam
             </button>
-            {scanning && (
+            {scanning ? (
               <div className="scanner-status">
-                <div className="spinner" />
-                <p>Scanning menu items with AI...</p>
+                <Loader variant="inline" label="Scanning menu items with AI…" />
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

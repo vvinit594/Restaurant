@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import ImageUploadField from '../components/ImageUploadField';
+import Loader from '../components/Loader';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import {
   getRestaurantProfile,
@@ -119,8 +120,7 @@ export default function RestaurantProfilePage() {
   if (loading) {
     return (
       <div className="admin-page">
-        <div className="admin-skeleton admin-skeleton-lg" />
-        <div className="admin-skeleton admin-mt" />
+        <Loader label="Loading profile…" />
       </div>
     );
   }

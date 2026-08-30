@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
+import Loader from '../components/Loader';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import {
   activateRestaurant,
@@ -147,9 +148,7 @@ export default function RestaurantDetailPage() {
   if (loading) {
     return (
       <div className="admin-page">
-        <div className="admin-skeleton admin-skeleton-lg" />
-        <div className="admin-skeleton admin-mt" />
-        <div className="admin-skeleton admin-mt" />
+        <Loader label="Loading restaurant…" />
       </div>
     );
   }
