@@ -69,24 +69,27 @@ export default function PublicRestaurantPage() {
     return () => window.clearTimeout(t);
   }, [loading, fromQr, unavailable, error, data]);
 
-  const filteredDishes = useMemo(() => {
+  const searchableList = useMemo(() => {
     if (!data?.dishes) return [];
-    let list = data.dishes;
+    if (selectedCategory === 'all') return data.dishes;
+    return data.dishes.filter((d) => d.category === selectedCategory);
+  }, [data, selectedCategory]);
 
-    if (selectedCategory !== 'all') {
-      list = list.filter((d) => d.category === selectedCategory);
-    }
+  const fuse = useMemo(
+    () =>
+      new Fuse(searchableList, {
+        keys: ['name', 'category', 'description', 'ingredients'],
+        threshold: 0.35,
+        ignoreLocation: true,
+      }),
+    [searchableList],
+  );
 
+  const filteredDishes = useMemo(() => {
     const q = searchText.trim();
-    if (!q) return list;
-
-    const fuse = new Fuse(list, {
-      keys: ['name', 'category', 'description', 'ingredients'],
-      threshold: 0.35,
-      ignoreLocation: true,
-    });
+    if (!q) return searchableList;
     return fuse.search(q).map((r) => r.item);
-  }, [data, searchText, selectedCategory]);
+  }, [fuse, searchableList, searchText]);
 
   const dishesByCategory = useMemo(() => {
     const map = new Map();

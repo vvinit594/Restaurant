@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { RestaurantAuthProvider } from './restaurant/auth/RestaurantAuthContext';
 
-test('renders the restaurant hero heading', () => {
+test('renders the DilYum home hero and navigation', () => {
   render(
     <MemoryRouter>
       <RestaurantAuthProvider>
@@ -11,10 +11,10 @@ test('renders the restaurant hero heading', () => {
       </RestaurantAuthProvider>
     </MemoryRouter>
   );
-  const heading = screen.getByRole('heading', {
-    name: /craving something extraordinary/i,
-  });
-  expect(heading).toBeInTheDocument();
+  expect(screen.getByAltText(/dilyum/i)).toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: /explore food menu/i }),
+  ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^restaurants$/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /restaurant login/i })).toBeInTheDocument();
 });

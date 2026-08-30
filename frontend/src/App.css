@@ -416,6 +416,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Warm dark fallback while video is deferred / skipped on mobile */
+  background:
+    radial-gradient(ellipse at 50% 35%, rgba(90, 45, 20, 0.55) 0%, transparent 55%),
+    linear-gradient(180deg, #2a1810 0%, #120c09 100%);
 }
 
 .hero-video-bg {
@@ -431,6 +435,12 @@ body {
   object-position: center;
   z-index: 1;
   filter: brightness(1.22) contrast(1.08) saturate(1.15);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+
+.hero-video-bg.is-ready {
+  opacity: 1;
 }
 
 .hero-dark-overlay {
@@ -956,6 +966,17 @@ body {
   line-height: 1.3;
   letter-spacing: -0.3px;
   flex: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-video-bg {
+    display: none !important;
+  }
+
+  .hero-explore-btn,
+  .hero-video-bg {
+    transition: none !important;
+  }
 }
 
 @keyframes modalOverlayIn {

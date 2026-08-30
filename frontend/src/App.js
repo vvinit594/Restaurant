@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { getImageUrl } from './dishImages';
@@ -85,26 +85,7 @@ function normalizeDish(dish) {
   };
 }
 
-function App() {
-  const navigate = useNavigate();
-  const [searchText, setSearchText] = useState("");
-  const [selectedPriceRange, setSelectedPriceRange] = useState("all");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-
-  const scrollToSearch = () => {
-    navigate('/restaurants');
-  };
-
-  const priceRangeOptions = [
-    { value: "all", label: "All Prices" },
-    { value: "under_100", label: "Under ₹100" },
-    { value: "under_200", label: "Under ₹200" },
-    { value: "under_300", label: "Under ₹300" },
-    { value: "under_500", label: "Under ₹500" },
-    { value: "under_600", label: "Under ₹600" },
-  ];
-
-  const rawDishes = [
+const HOME_MENU_RAW = [
     { id: 1, name: "Steam Idli", price: 55, category: "south_indian", image: getImageUrl("south_indian", "Steam Idli") },
     { id: 2, name: "Butter Idli", price: 75, category: "south_indian", image: getImageUrl("south_indian", "Butter Idli") },
     { id: 3, name: "Fry Idli", price: 75, category: "south_indian", image: getImageUrl("south_indian", "Fry Idli") },
@@ -410,7 +391,29 @@ function App() {
     { id: 303, name: "Strawberry Scoop", price: 110, category: "scoops", image: getImageUrl("scoops", "Strawberry Scoop") },
   ];
 
-  const dishes = rawDishes.map(normalizeDish);
+const HOME_MENU_DISHES = HOME_MENU_RAW.map(normalizeDish);
+
+function App() {
+  const navigate = useNavigate();
+  const [searchText, setSearchText] = useState("");
+  const [selectedPriceRange, setSelectedPriceRange] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+
+  const scrollToSearch = () => {
+    navigate('/restaurants');
+  };
+
+  const priceRangeOptions = [
+    { value: "all", label: "All Prices" },
+    { value: "under_100", label: "Under ₹100" },
+    { value: "under_200", label: "Under ₹200" },
+    { value: "under_300", label: "Under ₹300" },
+    { value: "under_500", label: "Under ₹500" },
+    { value: "under_600", label: "Under ₹600" },
+  ];
+
+  const dishes = HOME_MENU_DISHES;
+
 
   const categories = [
     { id: "all", label: "All Items" },
@@ -439,43 +442,49 @@ function App() {
     { id: "scoops", label: "Scoops" },
   ];
 
-  const matchesPriceRange = (price) => {
-    switch (selectedPriceRange) {
-      case "under_100":
-        return price <= 100;
-      case "under_200":
-        return price <= 200;
-      case "under_300":
-        return price <= 300;
-      case "under_500":
-        return price <= 500;
-      case "under_600":
-        return price <= 600;
-      case "all":
-      default:
-        return true;
-    }
-  };
+  const fuse = useMemo(
+    () =>
+      new Fuse(dishes, {
+        keys: ['name', 'categoryLabel', 'ingredients'],
+        threshold: 0.35,
+        ignoreLocation: true,
+        includeScore: true,
+        minMatchCharLength: 2,
+        isCaseSensitive: false,
+      }),
+    [dishes],
+  );
 
-  const fuse = new Fuse(dishes, {
-    keys: ['name', 'categoryLabel', 'ingredients'],
-    threshold: 0.35,
-    ignoreLocation: true,
-    includeScore: true,
-    minMatchCharLength: 2,
-    isCaseSensitive: false,
-  });
+  const filteredBySearch = useMemo(() => {
+    const q = searchText.trim();
+    if (!q) return dishes;
+    return fuse.search(q).map((result) => result.item);
+  }, [dishes, fuse, searchText]);
 
-  const filteredBySearch = searchText.trim()
-    ? fuse.search(searchText.trim()).map((result) => result.item)
-    : dishes;
-
-  const filteredItems = filteredBySearch.filter((item) => {
-    const matchesPrice = matchesPriceRange(item.price);
-    const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
-
-    return matchesPrice && matchesCategory;
-  });
+  const filteredItems = useMemo(() => {
+    const matchesPrice = (price) => {
+      switch (selectedPriceRange) {
+        case 'under_100':
+          return price <= 100;
+        case 'under_200':
+          return price <= 200;
+        case 'under_300':
+          return price <= 300;
+        case 'under_500':
+          return price <= 500;
+        case 'under_600':
+          return price <= 600;
+        case 'all':
+        default:
+          return true;
+      }
+    };
+    return filteredBySearch.filter((item) => {
+      const matchesCategory =
+        selectedCategory === 'all' || item.category === selectedCategory;
+      return matchesPrice(item.price) && matchesCategory;
+    });
+  }, [filteredBySearch, selectedPriceRange, selectedCategory]);
 
   return (
     <div className="app">
@@ -502,11 +511,84 @@ function App() {
 }
 
 function HeroSection({ onExploreMenu }) {
+  const videoRef = useRef(null);
+  const [loadVideo, setLoadVideo] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReducedMotion(Boolean(mq.matches));
+    sync();
+    mq.addEventListener?.('change', sync);
+    return () => mq.removeEventListener?.('change', sync);
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion) return undefined;
+
+    const connection =
+      navigator.connection ||
+      navigator.mozConnection ||
+      navigator.webkitConnection;
+    const saveData = Boolean(connection?.saveData);
+    const slowNet = /2g/.test(String(connection?.effectiveType || ''));
+    const isNarrow =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 768px)').matches;
+
+    // Mobile / Save-Data / slow networks: poster-only (no ~1.4MB mp4 download).
+    // No separate mobile video asset exists in /public.
+    if (isNarrow || saveData || slowNet) return undefined;
+
+    let cancelled = false;
+    const enable = () => {
+      if (!cancelled) setLoadVideo(true);
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(enable, { timeout: 1800 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback?.(id);
+      };
+    }
+
+    const t = window.setTimeout(enable, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [reducedMotion]);
+
+  useEffect(() => {
+    if (!loadVideo || !videoRef.current) return;
+    const el = videoRef.current;
+    const play = () => {
+      el.play().catch(() => {});
+    };
+    if (el.readyState >= 2) play();
+    else el.addEventListener('loadeddata', play, { once: true });
+  }, [loadVideo]);
+
   return (
-    <section className="hero-section">
-      <video className="hero-video-bg" autoPlay loop muted playsInline>
-        <source src="/hero-food.mp4" type="video/mp4" />
-      </video>
+    <section className="hero-section" aria-label="DilYum hero">
+      {loadVideo ? (
+        <video
+          ref={videoRef}
+          className={'hero-video-bg' + (videoReady ? ' is-ready' : '')}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          poster="/dilyum-logo.png"
+          onLoadedData={() => setVideoReady(true)}
+        >
+          <source src="/hero-food.mp4" type="video/mp4" />
+        </video>
+      ) : null}
 
       <div className="hero-dark-overlay">
         <img

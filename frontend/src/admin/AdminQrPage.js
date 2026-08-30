@@ -15,8 +15,8 @@ export default function AdminQrPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [preview, setPreview] = useState(null);
-  const [confirmRegen, setConfirmRegen] = useState(null);
+  /** Mutually exclusive: null | { type: 'preview', ... } | { type: 'confirm', restaurantId, name } */
+  const [activeModal, setActiveModal] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -54,13 +54,12 @@ export default function AdminQrPage() {
   };
 
   const onRegenerate = async () => {
-    if (!confirmRegen) return;
+    if (activeModal?.type !== 'confirm') return;
     setBusy(true);
     try {
-      await regenerateAdminRestaurantQr(confirmRegen.restaurantId);
+      await regenerateAdminRestaurantQr(activeModal.restaurantId);
       push('QR regenerated. Old token is disabled.');
-      setConfirmRegen(null);
-      setPreview(null);
+      setActiveModal(null);
       await load();
     } catch (err) {
       push(err.message || 'Regenerate failed.', 'error');
@@ -150,7 +149,9 @@ export default function AdminQrPage() {
                             <button
                               type="button"
                               className="admin-link-btn"
-                              onClick={() => setPreview({ ...row, scanUrl })}
+                              onClick={() =>
+                                setActiveModal({ type: 'preview', ...row, scanUrl })
+                              }
                             >
                               Preview
                             </button>
@@ -175,7 +176,8 @@ export default function AdminQrPage() {
                               type="button"
                               className="admin-link-btn danger"
                               onClick={() =>
-                                setConfirmRegen({
+                                setActiveModal({
+                                  type: 'confirm',
                                   restaurantId: row.restaurantId,
                                   name: row.name,
                                 })
@@ -203,28 +205,40 @@ export default function AdminQrPage() {
         </table>
       </div>
 
-      {preview?.qr ? (
-        <div className="admin-modal-overlay" role="presentation" onClick={() => setPreview(null)}>
+      {activeModal?.type === 'preview' && activeModal.qr ? (
+        <div
+          className="admin-modal-overlay"
+          role="presentation"
+          onClick={() => setActiveModal(null)}
+        >
           <div
             className="admin-modal"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3>{preview.name}</h3>
+            <h3>{activeModal.name}</h3>
             <p className="admin-muted">Scan to open the public menu.</p>
             <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
               <QrCodeImage
-                value={preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug)}
+                value={
+                  activeModal.scanUrl ||
+                  resolveQrScanUrl(activeModal.qr, activeModal.slug)
+                }
                 size={240}
-                alt={`${preview.name} QR`}
+                alt={`${activeModal.name} QR`}
               />
             </div>
             <p className="admin-cell-sub" style={{ wordBreak: 'break-all' }}>
-              {preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug)}
+              {activeModal.scanUrl ||
+                resolveQrScanUrl(activeModal.qr, activeModal.slug)}
             </p>
             <div className="admin-modal-actions">
-              <button type="button" className="admin-btn admin-btn-ghost" onClick={() => setPreview(null)}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={() => setActiveModal(null)}
+              >
                 Close
               </button>
               <button
@@ -232,8 +246,9 @@ export default function AdminQrPage() {
                 className="admin-btn admin-btn-secondary"
                 onClick={() =>
                   downloadQrPng(
-                    preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug),
-                    `${preview.slug}-qr.png`,
+                    activeModal.scanUrl ||
+                      resolveQrScanUrl(activeModal.qr, activeModal.slug),
+                    `${activeModal.slug}-qr.png`,
                   )
                 }
               >
@@ -241,7 +256,10 @@ export default function AdminQrPage() {
               </button>
               <a
                 className="admin-btn admin-btn-primary"
-                href={preview.scanUrl || resolveQrScanUrl(preview.qr, preview.slug)}
+                href={
+                  activeModal.scanUrl ||
+                  resolveQrScanUrl(activeModal.qr, activeModal.slug)
+                }
                 target="_blank"
                 rel="noreferrer"
               >
@@ -253,17 +271,17 @@ export default function AdminQrPage() {
       ) : null}
 
       <ConfirmDialog
-        open={Boolean(confirmRegen)}
+        open={activeModal?.type === 'confirm'}
         title="Regenerate QR?"
         message={
-          confirmRegen
-            ? `A new QR will be created for "${confirmRegen.name}". The old token will stop working.`
+          activeModal?.type === 'confirm'
+            ? `A new QR will be created for "${activeModal.name}". The old token will stop working.`
             : ''
         }
         confirmLabel="Regenerate"
         danger
         loading={busy}
-        onCancel={() => setConfirmRegen(null)}
+        onCancel={() => setActiveModal(null)}
         onConfirm={onRegenerate}
       />
     </div>
