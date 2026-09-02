@@ -100,10 +100,26 @@ export default function SiteNavbar({ cartCount = 0, onCartClick }) {
               onClick={onCartClick}
               aria-label={`Cart, ${cartCount} items`}
             >
-              <span aria-hidden="true">🛒</span>
-              {cartCount > 0 ? (
-                <span className="site-navbar-cart-badge">{cartCount > 99 ? '99+' : cartCount}</span>
-              ) : null}
+              <svg
+                className="site-navbar-cart-icon"
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="9" cy="20" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="18" cy="20" r="1.5" fill="currentColor" stroke="none" />
+                <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.5L21 8H7" />
+              </svg>
+              <span className="site-navbar-cart-label">Cart</span>
+              <span className="site-navbar-cart-badge">
+                {cartCount > 99 ? '99+' : cartCount}
+              </span>
             </button>
           ) : null}
 

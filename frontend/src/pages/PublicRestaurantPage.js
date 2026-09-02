@@ -389,24 +389,36 @@ function PublicDishCard({ item, quantity = 0, onQtyChange }) {
   }, [isOpen]);
 
   const QtyControls = (
-    <div className="order-qty" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        aria-label="Decrease quantity"
-        onClick={() => onQtyChange(-1)}
-        disabled={quantity <= 0}
-      >
-        −
-      </button>
-      <span>{quantity}</span>
-      <button
-        type="button"
-        aria-label="Increase quantity"
-        onClick={() => onQtyChange(1)}
-        disabled={quantity >= MAX_QTY}
-      >
-        +
-      </button>
+    <div className="order-qty-wrap" onClick={(e) => e.stopPropagation()}>
+      {quantity <= 0 ? (
+        <button
+          type="button"
+          className="order-add-btn"
+          aria-label={`Add ${item.name} to cart`}
+          onClick={() => onQtyChange(1)}
+        >
+          + Add
+        </button>
+      ) : (
+        <div className="order-qty">
+          <button
+            type="button"
+            aria-label="Decrease quantity"
+            onClick={() => onQtyChange(-1)}
+          >
+            −
+          </button>
+          <span>{quantity}</span>
+          <button
+            type="button"
+            aria-label="Increase quantity"
+            onClick={() => onQtyChange(1)}
+            disabled={quantity >= MAX_QTY}
+          >
+            +
+          </button>
+        </div>
+      )}
     </div>
   );
 
