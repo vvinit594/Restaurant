@@ -4,7 +4,7 @@ import Loader from './Loader';
 import { getPublicRestaurants } from '../services/publicRestaurantsApi';
 import { useRestaurantAuth } from '../restaurant/auth/RestaurantAuthContext';
 
-export default function SiteNavbar() {
+export default function SiteNavbar({ cartCount = 0, onCartClick }) {
   const { isAuthenticated, bootstrapping } = useRestaurantAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -92,6 +92,20 @@ export default function SiteNavbar() {
           >
             Restaurants
           </button>
+
+          {typeof onCartClick === 'function' ? (
+            <button
+              type="button"
+              className="site-navbar-cart"
+              onClick={onCartClick}
+              aria-label={`Cart, ${cartCount} items`}
+            >
+              <span aria-hidden="true">🛒</span>
+              {cartCount > 0 ? (
+                <span className="site-navbar-cart-badge">{cartCount > 99 ? '99+' : cartCount}</span>
+              ) : null}
+            </button>
+          ) : null}
 
           <button type="button" className="site-navbar-login" onClick={onRestaurantLogin}>
             {isAuthenticated ? 'Restaurant Dashboard' : 'Restaurant Login'}

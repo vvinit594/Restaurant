@@ -103,6 +103,8 @@ export class RestaurantPortalService {
     restaurantId?: string;
   }) {
     const ctx = await this.restaurantContext.requireActiveMembership(user);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
 
     const [
       totalDishes,
@@ -111,6 +113,11 @@ export class RestaurantPortalService {
       categories,
       tables,
       activeQrCodes,
+      newOrders,
+      preparing,
+      ready,
+      todaysOrders,
+      todaysRevenueAgg,
     ] = await Promise.all([
       this.prisma.dish.count({
         where: { restaurantId: ctx.restaurantId, deletedAt: null },
@@ -136,14 +143,42 @@ export class RestaurantPortalService {
           isActive: true,
         },
       }),
-      this.prisma.branch.count({
-        where: { restaurantId: ctx.restaurantId },
+      this.prisma.diningTable.count({
+        where: {
+          restaurantId: ctx.restaurantId,
+          deletedAt: null,
+          isActive: true,
+        },
       }),
       this.prisma.qrCode.count({
         where: {
           restaurantId: ctx.restaurantId,
           status: QrCodeStatus.ACTIVE,
         },
+      }),
+      this.prisma.order.count({
+        where: { restaurantId: ctx.restaurantId, status: 'NEW' },
+      }),
+      this.prisma.order.count({
+        where: { restaurantId: ctx.restaurantId, status: 'PREPARING' },
+      }),
+      this.prisma.order.count({
+        where: { restaurantId: ctx.restaurantId, status: 'READY' },
+      }),
+      this.prisma.order.count({
+        where: {
+          restaurantId: ctx.restaurantId,
+          createdAt: { gte: startOfDay },
+          status: { not: 'CANCELLED' },
+        },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          restaurantId: ctx.restaurantId,
+          createdAt: { gte: startOfDay },
+          status: { not: 'CANCELLED' },
+        },
+        _sum: { total: true },
       }),
     ]);
 
@@ -154,6 +189,11 @@ export class RestaurantPortalService {
       categories,
       tables,
       activeQrCodes,
+      newOrders,
+      preparing,
+      ready,
+      todaysOrders,
+      todaysRevenue: Number(todaysRevenueAgg._sum.total || 0),
       restaurant: {
         id: ctx.restaurantId,
         name: ctx.restaurantName,

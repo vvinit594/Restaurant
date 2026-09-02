@@ -19,16 +19,18 @@ export default function RestaurantLayout() {
   };
 
   const nav = [
-    { to: '/restaurant/dashboard', label: 'Dashboard', end: true, show: true },
-    { to: '/restaurant/profile', label: 'Restaurant Profile', show: permissions?.manageProfile },
-    { to: '/restaurant/settings', label: 'Settings', show: permissions?.manageSettings },
-    { to: '/restaurant/menu', label: 'All Dishes', show: permissions?.viewMenu },
-    { to: '/restaurant/menu/add', label: 'Add Dish', show: permissions?.addDish },
-    { to: '/restaurant/categories', label: 'Categories', show: permissions?.manageCategories },
-    { to: '/restaurant/ingredients', label: 'Ingredients', show: permissions?.manageIngredients },
-    { to: '/restaurant/tables', label: 'Tables', show: permissions?.manageTables },
-    { to: '/restaurant/qr', label: 'QR Codes', show: permissions?.manageQr },
-    { to: '/restaurant/analytics', label: 'Analytics', show: permissions?.viewAnalytics },
+    { to: '/restaurant/dashboard', label: 'Dashboard', end: true, show: true, group: 'overview' },
+    { to: '/restaurant/orders', label: 'Live Orders', end: true, show: permissions?.viewOrders, group: 'orders' },
+    { to: '/restaurant/orders/history', label: 'Order History', show: permissions?.viewOrders, group: 'orders' },
+    { to: '/restaurant/profile', label: 'Restaurant Profile', show: permissions?.manageProfile, group: 'restaurant' },
+    { to: '/restaurant/settings', label: 'Settings', show: permissions?.manageSettings, group: 'restaurant' },
+    { to: '/restaurant/menu', label: 'All Dishes', show: permissions?.viewMenu, group: 'menu' },
+    { to: '/restaurant/menu/add', label: 'Add Dish', show: permissions?.addDish, group: 'menu' },
+    { to: '/restaurant/categories', label: 'Categories', show: permissions?.manageCategories, group: 'menu' },
+    { to: '/restaurant/ingredients', label: 'Ingredients', show: permissions?.manageIngredients, group: 'menu' },
+    { to: '/restaurant/tables', label: 'Tables', show: permissions?.manageTables, group: 'tables' },
+    { to: '/restaurant/qr', label: 'QR Codes', show: permissions?.manageQr, group: 'tables' },
+    { to: '/restaurant/analytics', label: 'Analytics', show: permissions?.viewAnalytics, group: 'insights' },
   ].filter((item) => item.show);
 
   return (
@@ -42,39 +44,51 @@ export default function RestaurantLayout() {
         <nav className="admin-nav">
           <p className="rest-nav-group">Overview</p>
           {nav
-            .filter((n) => n.to === '/restaurant/dashboard')
+            .filter((n) => n.group === 'overview')
             .map((item) => (
               <NavItem key={item.to} item={item} onClick={() => setSidebarOpen(false)} />
             ))}
 
+          {nav.some((n) => n.group === 'orders') ? (
+            <>
+              <p className="rest-nav-group">Orders</p>
+              {nav
+                .filter((n) => n.group === 'orders')
+                .map((item) => (
+                  <NavItem key={item.to} item={item} onClick={() => setSidebarOpen(false)} />
+                ))}
+            </>
+          ) : null}
+
           <p className="rest-nav-group">Restaurant</p>
           {nav
-            .filter((n) => n.to.includes('/profile') || n.to.includes('/settings'))
+            .filter((n) => n.group === 'restaurant')
             .map((item) => (
               <NavItem key={item.to} item={item} onClick={() => setSidebarOpen(false)} />
             ))}
 
           <p className="rest-nav-group">Menu</p>
           {nav
-            .filter((n) => n.to.includes('/menu') || n.to.includes('/categories') || n.to.includes('/ingredients'))
+            .filter((n) => n.group === 'menu')
             .map((item) => (
               <NavItem key={item.to} item={item} onClick={() => setSidebarOpen(false)} />
             ))}
 
           <p className="rest-nav-group">Tables & QR</p>
           {nav
-            .filter((n) => n.to.includes('/tables') || n.to.includes('/qr'))
+            .filter((n) => n.group === 'tables')
             .map((item) => (
               <NavItem key={item.to} item={item} onClick={() => setSidebarOpen(false)} />
             ))}
 
-          {permissions?.viewAnalytics ? (
+          {nav.some((n) => n.group === 'insights') ? (
             <>
               <p className="rest-nav-group">Insights</p>
-              <NavItem
-                item={{ to: '/restaurant/analytics', label: 'Analytics', end: false }}
-                onClick={() => setSidebarOpen(false)}
-              />
+              {nav
+                .filter((n) => n.group === 'insights')
+                .map((item) => (
+                  <NavItem key={item.to} item={item} onClick={() => setSidebarOpen(false)} />
+                ))}
             </>
           ) : null}
         </nav>

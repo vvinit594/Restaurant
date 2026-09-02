@@ -29,6 +29,8 @@ export function getPermissions(role) {
     manageIngredients: isOwner || isManager,
     manageTables: isOwner || isManager,
     manageQr: isOwner || isManager,
+    viewOrders: isOwner || isManager || isStaff,
+    manageOrders: isOwner || isManager || isStaff,
     viewAnalytics: isOwner || isManager,
   };
 }

@@ -47,6 +47,15 @@ export default function RestaurantDashboard() {
       {error ? <div className="admin-alert admin-alert-error">{error}</div> : null}
 
       <div className="admin-stats-grid">
+        <StatCard label="New Orders" value={stats?.newOrders ?? 0} loading={loading} />
+        <StatCard label="Preparing" value={stats?.preparing ?? 0} loading={loading} />
+        <StatCard label="Ready" value={stats?.ready ?? 0} loading={loading} />
+        <StatCard label="Today's Orders" value={stats?.todaysOrders ?? 0} loading={loading} />
+        <StatCard
+          label="Today's Revenue"
+          value={stats ? `₹${stats.todaysRevenue ?? 0}` : 0}
+          loading={loading}
+        />
         <StatCard label="Total Dishes" value={stats?.totalDishes ?? 0} loading={loading} />
         <StatCard label="Available" value={stats?.availableDishes ?? 0} loading={loading} />
         <StatCard label="Unavailable" value={stats?.unavailableDishes ?? 0} loading={loading} />
@@ -58,6 +67,11 @@ export default function RestaurantDashboard() {
       <section className="admin-panel">
         <h2>Quick actions</h2>
         <div className="admin-quick-actions">
+          {permissions?.viewOrders ? (
+            <Link to="/restaurant/orders" className="admin-btn admin-btn-primary">
+              Live Orders
+            </Link>
+          ) : null}
           {permissions?.viewMenu ? (
             <Link to="/restaurant/menu" className="admin-btn admin-btn-secondary">
               Manage Menu
@@ -75,7 +89,7 @@ export default function RestaurantDashboard() {
           ) : null}
         </div>
         <p className="admin-muted admin-mt">
-          All menu changes apply only to <strong>{user?.restaurantName}</strong>.
+          All menu and order changes apply only to <strong>{user?.restaurantName}</strong>.
         </p>
       </section>
     </div>

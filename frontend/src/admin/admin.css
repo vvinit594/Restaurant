@@ -919,3 +919,74 @@
     max-width: none;
   }
 }
+
+.order-portal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.order-portal-card {
+  background: #1c1917;
+  border: 1px solid rgba(251, 191, 36, 0.16);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.order-portal-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.order-portal-card ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: #d6d3d1;
+}
+
+.order-portal-total {
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.order-portal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.order-bill-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.order-bill-table th,
+.order-bill-table td {
+  text-align: left;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+@media print {
+  .admin-shell aside,
+  .admin-topbar,
+  .order-checkout-actions,
+  .dish-modal-close {
+    display: none !important;
+  }
+
+  .order-cart-overlay {
+    position: static;
+    background: #fff;
+  }
+
+  .order-bill-modal {
+    box-shadow: none;
+    border: none;
+    color: #000;
+    background: #fff;
+  }
+}

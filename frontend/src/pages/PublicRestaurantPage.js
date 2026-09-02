@@ -1,13 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import Fuse from 'fuse.js';
+import CartDrawer from '../components/CartDrawer';
 import Loader from '../components/Loader';
+import OrderCheckoutModal from '../components/OrderCheckoutModal';
 import SiteNavbar from '../components/SiteNavbar';
+import {
+  cartQtyTotal,
+  clearCart,
+  loadCart,
+  saveCart,
+} from '../services/cartStorage';
 import { getPublicRestaurantBySlug } from '../services/publicRestaurantsApi';
 import { resolvePublicQr } from '../services/qrApi';
 
 const FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=500&q=80';
+const MAX_QTY = 20;
 
 export default function PublicRestaurantPage() {
   const { restaurantSlug, token } = useParams();
@@ -19,6 +28,20 @@ export default function PublicRestaurantPage() {
   const [error, setError] = useState('');
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [cartItems, setCartItems] = useState(() => loadCart(restaurantSlug));
+  const [cartOpen, setCartOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  useEffect(() => {
+    setCartItems(loadCart(restaurantSlug));
+    setCartOpen(false);
+    setCheckoutOpen(false);
+  }, [restaurantSlug]);
+
+  useEffect(() => {
+    if (!restaurantSlug) return;
+    saveCart(restaurantSlug, cartItems);
+  }, [restaurantSlug, cartItems]);
 
   useEffect(() => {
     let alive = true;
@@ -102,6 +125,54 @@ export default function PublicRestaurantPage() {
     return [...map.entries()];
   }, [filteredDishes]);
 
+  const qtyByDish = useMemo(() => {
+    const map = {};
+    cartItems.forEach((i) => {
+      map[i.dishId] = i.quantity;
+    });
+    return map;
+  }, [cartItems]);
+
+  const setDishQty = (dish, nextQty) => {
+    const q = Math.max(0, Math.min(MAX_QTY, Number(nextQty) || 0));
+    setCartItems((prev) => {
+      const without = prev.filter((i) => i.dishId !== dish.id);
+      if (q <= 0) return without;
+      return [
+        ...without,
+        {
+          dishId: dish.id,
+          name: dish.name,
+          price: Number(dish.price) || 0,
+          imageUrl: dish.imageUrl || dish.image || '',
+          quantity: q,
+        },
+      ];
+    });
+  };
+
+  const changeQty = (dishId, delta) => {
+    const dish =
+      data?.dishes?.find((d) => d.id === dishId) ||
+      cartItems.find((i) => i.dishId === dishId);
+    if (!dish) return;
+    const current = qtyByDish[dishId] || 0;
+    const next = current + delta;
+    if (dish.price != null) {
+      setDishQty(
+        {
+          id: dish.id || dish.dishId,
+          name: dish.name,
+          price: dish.price,
+          imageUrl: dish.imageUrl || dish.image || '',
+        },
+        next,
+      );
+    }
+  };
+
+  const cartCount = cartQtyTotal(cartItems);
+
   if (loading) {
     return (
       <div className="app public-restaurant-page">
@@ -148,7 +219,10 @@ export default function PublicRestaurantPage() {
 
   return (
     <div className="app public-restaurant-page">
-      <SiteNavbar />
+      <SiteNavbar
+        cartCount={cartCount}
+        onCartClick={() => setCartOpen(true)}
+      />
 
       <section
         className="public-rest-hero"
@@ -248,7 +322,14 @@ export default function PublicRestaurantPage() {
                 <h2 className="public-rest-category-title">{category}</h2>
                 <div className="grid">
                   {items.map((item) => (
-                    <PublicDishCard key={item.id} item={item} />
+                    <PublicDishCard
+                      key={item.id}
+                      item={item}
+                      quantity={qtyByDish[item.id] || 0}
+                      onQtyChange={(delta) => {
+                        setDishQty(item, (qtyByDish[item.id] || 0) + delta);
+                      }}
+                    />
                   ))}
                 </div>
               </section>
@@ -256,11 +337,38 @@ export default function PublicRestaurantPage() {
           )}
         </>
       )}
+
+      <CartDrawer
+        open={cartOpen}
+        restaurantName={restaurant.name}
+        items={cartItems}
+        onClose={() => setCartOpen(false)}
+        onQuantityChange={changeQty}
+        onRemove={(dishId) =>
+          setCartItems((prev) => prev.filter((i) => i.dishId !== dishId))
+        }
+        onProceed={() => {
+          setCartOpen(false);
+          setCheckoutOpen(true);
+        }}
+      />
+
+      <OrderCheckoutModal
+        open={checkoutOpen}
+        restaurantName={restaurant.name}
+        restaurantSlug={restaurant.slug || restaurantSlug}
+        items={cartItems}
+        onClose={() => setCheckoutOpen(false)}
+        onSuccess={() => {
+          clearCart(restaurant.slug || restaurantSlug);
+          setCartItems([]);
+        }}
+      />
     </div>
   );
 }
 
-function PublicDishCard({ item }) {
+function PublicDishCard({ item, quantity = 0, onQtyChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const ingredients = item.ingredients ?? [];
   const allergens = item.allergens ?? [];
@@ -279,6 +387,28 @@ function PublicDishCard({ item }) {
       document.body.style.overflow = prev;
     };
   }, [isOpen]);
+
+  const QtyControls = (
+    <div className="order-qty" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label="Decrease quantity"
+        onClick={() => onQtyChange(-1)}
+        disabled={quantity <= 0}
+      >
+        −
+      </button>
+      <span>{quantity}</span>
+      <button
+        type="button"
+        aria-label="Increase quantity"
+        onClick={() => onQtyChange(1)}
+        disabled={quantity >= MAX_QTY}
+      >
+        +
+      </button>
+    </div>
+  );
 
   return (
     <>
@@ -314,8 +444,8 @@ function PublicDishCard({ item }) {
             </span>
           ))}
         </div>
-        <div className="card-footer">
-          <p className="click-hint">Click for details</p>
+        <div className="card-footer order-card-footer">
+          {QtyControls}
         </div>
       </div>
 
@@ -394,32 +524,7 @@ function PublicDishCard({ item }) {
                 </>
               ) : null}
 
-              {item.calories != null ||
-              item.protein != null ||
-              item.carbohydrates != null ||
-              item.fat != null ? (
-                <>
-                  <p className="ingredients-label" style={{ marginTop: 14 }}>
-                    Nutrition:
-                  </p>
-                  <div className="ingredients-list">
-                    {item.calories != null ? (
-                      <span className="ingredient-full">{item.calories} kcal</span>
-                    ) : null}
-                    {item.protein != null ? (
-                      <span className="ingredient-full">Protein {item.protein}g</span>
-                    ) : null}
-                    {item.carbohydrates != null ? (
-                      <span className="ingredient-full">
-                        Carbs {item.carbohydrates}g
-                      </span>
-                    ) : null}
-                    {item.fat != null ? (
-                      <span className="ingredient-full">Fat {item.fat}g</span>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
+              <div className="order-modal-qty">{QtyControls}</div>
             </div>
           </div>
         </div>

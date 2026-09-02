@@ -223,6 +223,19 @@ export class AdminRestaurantsService {
           },
         });
 
+        await tx.diningTable.createMany({
+          data: Array.from({ length: 10 }, (_, i) => {
+            const n = i + 1;
+            return {
+              restaurantId: restaurant.id,
+              label: String(n),
+              code: String(n),
+              sortOrder: n,
+              isActive: true,
+            };
+          }),
+        });
+
         const defaultCategories = [
           'South Indian',
           'Starters',
