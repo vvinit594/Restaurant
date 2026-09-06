@@ -571,7 +571,8 @@ export function validateBulkPreview(
       if (existingDishNames.has(key)) {
         errors.push({
           field: 'name',
-          message: 'A dish with this name already exists.',
+          message:
+            'A dish with this name already exists. Rename it in Excel or delete/edit it under All Dishes.',
         });
       }
       const first = seen.get(key);

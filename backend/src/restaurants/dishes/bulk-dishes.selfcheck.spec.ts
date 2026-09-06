@@ -191,18 +191,19 @@ describe('Bulk dishes import', () => {
     expect(String(created[0].imageUrl)).not.toMatch(/^data:/);
   });
 
-  it('does not create when validation fails (category missing)', async () => {
+  it('creates valid rows and skips invalid category rows', async () => {
     const { prisma, created } = mockPrisma({});
     const svc = makeService(prisma);
-    await expect(
-      svc.bulkCreateDishes({ id: 'u1', role: 'RESTAURANT_OWNER' }, {
-        dishes: [
-          { row: 2, name: 'Ok', price: 10, category: 'Main Course' },
-          { row: 3, name: 'Bad', price: 10, category: 'Chinese' },
-        ],
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(created.length).toBe(0);
+    const out = await svc.bulkCreateDishes({ id: 'u1', role: 'RESTAURANT_OWNER' }, {
+      dishes: [
+        { row: 2, name: 'Ok', price: 10, category: 'Main Course' },
+        { row: 3, name: 'Bad', price: 10, category: 'Chinese' },
+      ],
+    });
+    expect(out.imported).toBe(1);
+    expect(out.failed).toBe(1);
+    expect(created.length).toBe(1);
+    expect(created[0].name).toBe('Ok');
   });
 
   it('rejects oversized batch', async () => {

@@ -175,7 +175,7 @@ test('detects existing DB duplicate names', () => {
     new Set(['pav bhaji']),
   );
   expect(preview.invalidCount).toBe(1);
-  expect(preview.rows[0].errors[0].message).toMatch(/already exists/);
+  expect(preview.rows[0].errors[0].message).toMatch(/already exists/i);
 });
 
 test('300-row preview stays efficient (no Base64)', () => {

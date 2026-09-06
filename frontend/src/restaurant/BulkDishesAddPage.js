@@ -189,22 +189,46 @@ export default function BulkDishesAddPage() {
     );
   };
 
-  const onValidatePreview = () => {
+  const onValidatePreview = async () => {
     if (!excelRows.length) {
       push('Select an Excel file first.', 'error');
       return;
     }
+
+    // Refresh existing dish names so duplicate preview matches the server.
+    let names = existingNames;
+    try {
+      const menu = await getRestaurantMenu();
+      names = new Set(
+        (menu || []).map((d) => String(d.name || '').trim().toLowerCase()),
+      );
+      setExistingNames(names);
+    } catch {
+      /* keep cached names; server still validates */
+    }
+
     if (preview?.rows) revokePreviewThumbs(preview.rows);
     const next = validateBulkPreview(
       excelRows,
       imageIndex,
       categories,
-      existingNames,
+      names,
     );
     setPreview(next);
     setStep(STEP_PREVIEW);
     setResult(null);
     setRetryRows([]);
+
+    if (next.invalidCount > 0 && next.validCount === 0) {
+      push(
+        'All rows have errors. Duplicate names already on your menu must be renamed in Excel or removed under All Dishes.',
+        'error',
+      );
+    } else if (next.invalidCount > 0) {
+      push(
+        `${next.validCount} valid, ${next.invalidCount} with errors (duplicates will be skipped).`,
+      );
+    }
   };
 
   const onCancelPreview = () => {
@@ -384,7 +408,15 @@ export default function BulkDishesAddPage() {
       if (imported > 0) {
         push(`Imported ${imported} dish${imported === 1 ? '' : 'es'}.`);
       } else {
-        push('No dishes were imported.', 'error');
+        const dupHint = failedDuringImport.some((e) =>
+          /already exists/i.test(e.message || ''),
+        );
+        push(
+          dupHint
+            ? 'No dishes imported — these names already exist under All Dishes. Rename them in Excel or remove the existing dishes, then try again.'
+            : 'No dishes were imported.',
+          'error',
+        );
       }
     } catch (err) {
       push(err.message || 'Bulk import failed.', 'error');

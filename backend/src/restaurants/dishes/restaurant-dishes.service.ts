@@ -260,17 +260,32 @@ export class RestaurantDishesService {
       requireImageUrl: false,
     });
 
-    if (prepared.invalidCount > 0) {
+    const toCreate = prepared.rows.filter((r) => r.status === 'valid');
+    const skippedInvalid = prepared.rows.filter((r) => r.status === 'invalid');
+
+    // Import only valid rows — do not abort the whole batch when some rows are duplicates.
+    if (!toCreate.length) {
       this.logger.warn(
-        `bulk import rejected restaurant=${ctx.restaurantId} invalid=${prepared.invalidCount}`,
+        `bulk import nothing to create restaurant=${ctx.restaurantId} invalid=${prepared.invalidCount}`,
       );
       throw new BadRequestException({
-        message: `${prepared.invalidCount} row(s) failed validation. No dishes were created.`,
+        message:
+          prepared.invalidCount > 0
+            ? `No dishes imported. ${prepared.invalidCount} row(s) failed validation (often duplicate names that already exist). Rename rows in Excel or remove existing dishes first.`
+            : 'No valid dishes to import.',
         total: prepared.rows.length,
-        valid: prepared.validCount,
+        valid: 0,
         invalid: prepared.invalidCount,
+        imported: 0,
+        failed: prepared.invalidCount,
         rows: prepared.rows,
       });
+    }
+
+    if (skippedInvalid.length) {
+      this.logger.log(
+        `bulk import skipping ${skippedInvalid.length} invalid row(s); creating ${toCreate.length}`,
+      );
     }
 
     const created: any[] = [];
@@ -285,7 +300,7 @@ export class RestaurantDishesService {
     }> = [];
     const usedSlugs = new Set<string>();
 
-    for (const row of prepared.rows) {
+    for (const row of toCreate) {
       const item = row.payload!;
       const category = prepared.categoryByName.get(
         item.category.trim().toLowerCase(),
@@ -323,58 +338,87 @@ export class RestaurantDishesService {
           continue;
         }
 
-        let slug = base;
-        let n = 2;
-        for (;;) {
-          if (!usedSlugs.has(slug)) {
-            const clash = await this.prisma.dish.findFirst({
-              where: {
-                restaurantId: ctx.restaurantId,
-                slug,
-                deletedAt: null,
-              },
-              select: { id: true },
-            });
-            if (!clash) break;
-          }
-          slug = `${base}-${n}`;
-          n += 1;
+        // Include soft-deleted rows: @@unique([restaurantId, slug]) ignores deletedAt.
+        let slug = await this.uniqueDishSlug(ctx.restaurantId, base);
+        while (usedSlugs.has(slug)) {
+          const suffix = usedSlugs.size + 2;
+          slug = await this.uniqueDishSlug(
+            ctx.restaurantId,
+            `${base}-${suffix}`,
+          );
         }
         usedSlugs.add(slug);
 
-        const dish = await this.prisma.dish.create({
-          data: {
-            restaurantId: ctx.restaurantId,
-            categoryId: category.id,
-            name: item.name.trim(),
-            slug,
-            description: item.description?.trim() || null,
-            price: item.price,
-            imageUrl: item.imageUrl?.trim() || null,
-            calories: toOptionalInt(item.calories),
-            protein: toOptionalFloat(item.protein),
-            carbohydrates: toOptionalFloat(item.carbohydrates),
-            fat: toOptionalFloat(item.fat),
-            ingredients: toStringList(item.ingredients),
-            allergens: toStringList(item.allergens),
-            isVeg: item.isVeg ?? true,
-            isVegan: item.isVegan ?? false,
-            isJain: item.isJain ?? false,
-            isAvailable: item.isAvailable ?? item.available ?? true,
-            isPublished: item.isPublished ?? item.published ?? true,
-          },
-          include: { category: true },
-        });
+        let dish;
+        try {
+          dish = await this.prisma.dish.create({
+            data: {
+              restaurantId: ctx.restaurantId,
+              categoryId: category.id,
+              name: item.name.trim(),
+              slug,
+              description: item.description?.trim() || null,
+              price: item.price,
+              imageUrl: item.imageUrl?.trim() || null,
+              calories: toOptionalInt(item.calories),
+              protein: toOptionalFloat(item.protein),
+              carbohydrates: toOptionalFloat(item.carbohydrates),
+              fat: toOptionalFloat(item.fat),
+              ingredients: toStringList(item.ingredients),
+              allergens: toStringList(item.allergens),
+              isVeg: item.isVeg ?? true,
+              isVegan: item.isVegan ?? false,
+              isJain: item.isJain ?? false,
+              isAvailable: item.isAvailable ?? item.available ?? true,
+              isPublished: item.isPublished ?? item.published ?? true,
+            },
+            include: { category: true },
+          });
+        } catch (createErr: any) {
+          // Soft-deleted slug race / concurrent import — bump slug and retry once.
+          if (createErr?.code === 'P2002') {
+            slug = await this.uniqueDishSlug(
+              ctx.restaurantId,
+              `${base}-${Date.now().toString(36)}`,
+            );
+            usedSlugs.add(slug);
+            dish = await this.prisma.dish.create({
+              data: {
+                restaurantId: ctx.restaurantId,
+                categoryId: category.id,
+                name: item.name.trim(),
+                slug,
+                description: item.description?.trim() || null,
+                price: item.price,
+                imageUrl: item.imageUrl?.trim() || null,
+                calories: toOptionalInt(item.calories),
+                protein: toOptionalFloat(item.protein),
+                carbohydrates: toOptionalFloat(item.carbohydrates),
+                fat: toOptionalFloat(item.fat),
+                ingredients: toStringList(item.ingredients),
+                allergens: toStringList(item.allergens),
+                isVeg: item.isVeg ?? true,
+                isVegan: item.isVegan ?? false,
+                isJain: item.isJain ?? false,
+                isAvailable: item.isAvailable ?? item.available ?? true,
+                isPublished: item.isPublished ?? item.published ?? true,
+              },
+              include: { category: true },
+            });
+          } else {
+            throw createErr;
+          }
+        }
         created.push(this.toClientDish(dish));
       } catch (err: any) {
         const prismaCode = err?.code as string | undefined;
         let message = 'Could not create dish.';
         let field = 'import';
         if (prismaCode === 'P2002') {
-          message = 'A dish with this name or slug already exists.';
+          message =
+            'A dish with this name already exists. Rename it in Excel or delete the existing dish first.';
           field = 'name';
         } else if (err?.message) {
-          // Keep message short / safe for clients
           message = String(err.message).split('\n')[0].slice(0, 180);
         }
         this.logger.error(
@@ -392,28 +436,29 @@ export class RestaurantDishesService {
       }
     }
 
+    const allFailed = [...skippedInvalid, ...failedRows];
+
     this.logger.log(
-      `bulk import done restaurant=${ctx.restaurantId} imported=${created.length} failed=${failedRows.length}`,
+      `bulk import done restaurant=${ctx.restaurantId} imported=${created.length} failed=${allFailed.length}`,
     );
 
-    // If nothing was created, surface as 400 with row details (not opaque 500).
-    if (created.length === 0 && failedRows.length > 0) {
+    if (created.length === 0 && allFailed.length > 0) {
       throw new BadRequestException({
-        message: `Bulk import failed. ${failedRows.length} row(s) could not be created.`,
+        message: `Bulk import failed. ${allFailed.length} row(s) could not be created. If names already exist under All Dishes, rename them in Excel or remove the existing dishes first.`,
         total: prepared.rows.length,
         valid: 0,
-        invalid: failedRows.length,
+        invalid: allFailed.length,
         imported: 0,
-        failed: failedRows.length,
-        rows: failedRows,
+        failed: allFailed.length,
+        rows: allFailed,
       });
     }
 
     return {
       imported: created.length,
-      failed: failedRows.length,
+      failed: allFailed.length,
       dishes: created,
-      rows: failedRows,
+      rows: allFailed,
       restaurantId: ctx.restaurantId,
     };
   }
@@ -528,7 +573,8 @@ export class RestaurantDishesService {
         if (existingNames.has(key)) {
           errors.push({
             field: 'name',
-            message: 'A dish with this name already exists.',
+            message:
+              'A dish with this name already exists. Rename it in Excel or delete/edit the existing dish under All Dishes.',
           });
         }
         const firstRow = seenInBatch.get(key);
@@ -723,13 +769,14 @@ export class RestaurantDishesService {
     let slug = base;
     let i = 2;
     for (;;) {
+      // Must ignore deletedAt: soft-deleted rows still occupy @@unique([restaurantId, slug]).
       const clash = await this.prisma.dish.findFirst({
         where: {
           restaurantId,
           slug,
-          deletedAt: null,
           ...(excludeId ? { NOT: { id: excludeId } } : {}),
         },
+        select: { id: true },
       });
       if (!clash) return slug;
       slug = `${base}-${i}`;
