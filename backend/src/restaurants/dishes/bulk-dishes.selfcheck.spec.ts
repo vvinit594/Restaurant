@@ -191,14 +191,14 @@ describe('Bulk dishes import', () => {
     expect(String(created[0].imageUrl)).not.toMatch(/^data:/);
   });
 
-  it('does not partially create when any row is invalid', async () => {
+  it('does not create when validation fails (category missing)', async () => {
     const { prisma, created } = mockPrisma({});
     const svc = makeService(prisma);
     await expect(
       svc.bulkCreateDishes({ id: 'u1', role: 'RESTAURANT_OWNER' }, {
         dishes: [
           { row: 2, name: 'Ok', price: 10, category: 'Main Course' },
-          { row: 3, name: 'Bad', price: -1, category: 'Main Course' },
+          { row: 3, name: 'Bad', price: 10, category: 'Chinese' },
         ],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -217,5 +217,18 @@ describe('Bulk dishes import', () => {
     await expect(
       svc.bulkCreateDishes({ id: 'u1', role: 'RESTAURANT_OWNER' }, { dishes }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('does not use interactive $transaction for bulk create', async () => {
+    const { prisma } = mockPrisma({});
+    const svc = makeService(prisma);
+    await svc.bulkCreateDishes({ id: 'u1', role: 'RESTAURANT_OWNER' }, {
+      dishes: [
+        { row: 2, name: 'A', price: 10, category: 'Main Course' },
+        { row: 3, name: 'B', price: 12, category: 'Main Course' },
+      ],
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.dish.create).toHaveBeenCalledTimes(2);
   });
 });

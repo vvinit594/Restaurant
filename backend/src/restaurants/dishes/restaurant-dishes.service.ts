@@ -1,12 +1,19 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { MembershipRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RestaurantContextService } from '../restaurant-context.service';
-import { CreateDishDto, UpdateDishDto, BulkDishesDto, BulkDishItemDto, BULK_DISH_BATCH_MAX } from './dto/dish.dto';
+import {
+  CreateDishDto,
+  UpdateDishDto,
+  BulkDishesDto,
+  BulkDishItemDto,
+  BULK_DISH_BATCH_MAX,
+} from './dto/dish.dto';
 
 const DEFAULT_CATEGORIES = [
   'South Indian',
@@ -39,8 +46,24 @@ function toStringList(value: unknown): string[] {
   return [];
 }
 
+function toOptionalInt(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n);
+}
+
+function toOptionalFloat(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
 @Injectable()
 export class RestaurantDishesService {
+  private readonly logger = new Logger(RestaurantDishesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly restaurantContext: RestaurantContextService,
@@ -204,8 +227,11 @@ export class RestaurantDishesService {
 
   /**
    * Create dishes for authenticated restaurant only.
-   * All-or-nothing per request batch: any invalid row → no creates.
-   * Images must already be HTTPS Supabase URLs (client signed-upload).
+   *
+   * IMPORTANT: Do NOT use Prisma interactive `$transaction(async tx => …)` against
+   * Supabase pooler — multi-round-trip bulk creates get
+   * "Transaction API error: Transaction not found" → HTTP 500.
+   * Create sequentially with the same path as single Add Dish.
    */
   async bulkCreateDishes(
     user: { id: string; role: any; restaurantId?: string },
@@ -226,11 +252,18 @@ export class RestaurantDishesService {
       );
     }
 
+    this.logger.log(
+      `bulk import start restaurant=${ctx.restaurantId} rows=${dto.dishes.length}`,
+    );
+
     const prepared = await this.prepareBulkRows(ctx.restaurantId, dto.dishes, {
       requireImageUrl: false,
     });
 
     if (prepared.invalidCount > 0) {
+      this.logger.warn(
+        `bulk import rejected restaurant=${ctx.restaurantId} invalid=${prepared.invalidCount}`,
+      );
       throw new BadRequestException({
         message: `${prepared.invalidCount} row(s) failed validation. No dishes were created.`,
         total: prepared.rows.length,
@@ -241,29 +274,75 @@ export class RestaurantDishesService {
     }
 
     const created: any[] = [];
+    const failedRows: Array<{
+      row: number;
+      name: string;
+      category: string;
+      price: number | null;
+      imageUrl: string;
+      status: 'invalid';
+      errors: Array<{ field: string; message: string }>;
+    }> = [];
     const usedSlugs = new Set<string>();
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const row of prepared.rows) {
-        const item = row.payload!;
-        const category = prepared.categoryByName.get(
-          item.category.trim().toLowerCase(),
-        )!;
-        let slug = slugify(item.name.trim());
-        if (!slug) {
-          throw new BadRequestException(
-            `Row ${row.row}: dish name is invalid.`,
-          );
+    for (const row of prepared.rows) {
+      const item = row.payload!;
+      const category = prepared.categoryByName.get(
+        item.category.trim().toLowerCase(),
+      );
+      if (!category) {
+        failedRows.push({
+          row: row.row,
+          name: row.name,
+          category: row.category,
+          price: row.price,
+          imageUrl: row.imageUrl,
+          status: 'invalid',
+          errors: [
+            {
+              field: 'category',
+              message: `Category "${item.category}" does not exist for this restaurant.`,
+            },
+          ],
+        });
+        continue;
+      }
+
+      try {
+        const base = slugify(item.name.trim());
+        if (!base) {
+          failedRows.push({
+            row: row.row,
+            name: row.name,
+            category: row.category,
+            price: row.price,
+            imageUrl: row.imageUrl,
+            status: 'invalid',
+            errors: [{ field: 'name', message: 'Dish name is invalid.' }],
+          });
+          continue;
         }
-        slug = await this.uniqueDishSlugTx(
-          tx,
-          ctx.restaurantId,
-          slug,
-          usedSlugs,
-        );
+
+        let slug = base;
+        let n = 2;
+        for (;;) {
+          if (!usedSlugs.has(slug)) {
+            const clash = await this.prisma.dish.findFirst({
+              where: {
+                restaurantId: ctx.restaurantId,
+                slug,
+                deletedAt: null,
+              },
+              select: { id: true },
+            });
+            if (!clash) break;
+          }
+          slug = `${base}-${n}`;
+          n += 1;
+        }
         usedSlugs.add(slug);
 
-        const dish = await tx.dish.create({
+        const dish = await this.prisma.dish.create({
           data: {
             restaurantId: ctx.restaurantId,
             categoryId: category.id,
@@ -272,10 +351,10 @@ export class RestaurantDishesService {
             description: item.description?.trim() || null,
             price: item.price,
             imageUrl: item.imageUrl?.trim() || null,
-            calories: item.calories ?? null,
-            protein: item.protein ?? null,
-            carbohydrates: item.carbohydrates ?? null,
-            fat: item.fat ?? null,
+            calories: toOptionalInt(item.calories),
+            protein: toOptionalFloat(item.protein),
+            carbohydrates: toOptionalFloat(item.carbohydrates),
+            fat: toOptionalFloat(item.fat),
             ingredients: toStringList(item.ingredients),
             allergens: toStringList(item.allergens),
             isVeg: item.isVeg ?? true,
@@ -287,13 +366,54 @@ export class RestaurantDishesService {
           include: { category: true },
         });
         created.push(this.toClientDish(dish));
+      } catch (err: any) {
+        const prismaCode = err?.code as string | undefined;
+        let message = 'Could not create dish.';
+        let field = 'import';
+        if (prismaCode === 'P2002') {
+          message = 'A dish with this name or slug already exists.';
+          field = 'name';
+        } else if (err?.message) {
+          // Keep message short / safe for clients
+          message = String(err.message).split('\n')[0].slice(0, 180);
+        }
+        this.logger.error(
+          `bulk import row=${row.row} restaurant=${ctx.restaurantId} failed: ${message}`,
+        );
+        failedRows.push({
+          row: row.row,
+          name: row.name,
+          category: row.category,
+          price: row.price,
+          imageUrl: row.imageUrl,
+          status: 'invalid',
+          errors: [{ field, message }],
+        });
       }
-    });
+    }
+
+    this.logger.log(
+      `bulk import done restaurant=${ctx.restaurantId} imported=${created.length} failed=${failedRows.length}`,
+    );
+
+    // If nothing was created, surface as 400 with row details (not opaque 500).
+    if (created.length === 0 && failedRows.length > 0) {
+      throw new BadRequestException({
+        message: `Bulk import failed. ${failedRows.length} row(s) could not be created.`,
+        total: prepared.rows.length,
+        valid: 0,
+        invalid: failedRows.length,
+        imported: 0,
+        failed: failedRows.length,
+        rows: failedRows,
+      });
+    }
 
     return {
       imported: created.length,
-      failed: 0,
+      failed: failedRows.length,
       dishes: created,
+      rows: failedRows,
       restaurantId: ctx.restaurantId,
     };
   }
@@ -439,27 +559,6 @@ export class RestaurantDishesService {
     });
 
     return { rows, validCount, invalidCount, categoryByName };
-  }
-
-  private async uniqueDishSlugTx(
-    tx: Prisma.TransactionClient,
-    restaurantId: string,
-    base: string,
-    usedInBatch: Set<string>,
-  ) {
-    let slug = base;
-    let i = 2;
-    for (;;) {
-      if (!usedInBatch.has(slug)) {
-        const clash = await tx.dish.findFirst({
-          where: { restaurantId, slug, deletedAt: null },
-          select: { id: true },
-        });
-        if (!clash) return slug;
-      }
-      slug = `${base}-${i}`;
-      i += 1;
-    }
   }
 
   async updateDish(

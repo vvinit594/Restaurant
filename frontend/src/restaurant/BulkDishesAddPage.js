@@ -296,13 +296,30 @@ export default function BulkDishesAddPage() {
           return body;
         });
         const res = await bulkCreateDishes(clean);
-        imported += Number(res?.imported || clean.length);
+        imported += Number(res?.imported || 0);
+        const failedFromApi = Array.isArray(res?.rows)
+          ? res.rows.filter((r) => r.status === 'invalid')
+          : [];
+        failedFromApi.forEach((r) => {
+          (r.errors || []).forEach((e) => {
+            failedDuringImport.push({
+              row: r.row,
+              name: r.name,
+              field: e.field,
+              message: e.message,
+            });
+          });
+        });
         setProgress((p) => ({
           ...p,
           dishesDone: Math.min(p.dishesTotal, p.dishesDone + clean.length),
         }));
       } catch (err) {
         const detailRows = err?.data?.rows || [];
+        const reason =
+          (typeof err?.data?.message === 'string' && err.data.message) ||
+          err.message ||
+          'Bulk import failed. The server could not create the dish records.';
         if (Array.isArray(detailRows) && detailRows.length) {
           detailRows
             .filter((r) => r.status === 'invalid')
@@ -322,7 +339,7 @@ export default function BulkDishesAddPage() {
               row: d.row,
               name: d.name,
               field: 'import',
-              message: err.message || 'Import failed for this batch.',
+              message: reason,
             });
           });
         }
