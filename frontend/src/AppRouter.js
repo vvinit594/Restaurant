@@ -20,6 +20,7 @@ import RestaurantLayout from './restaurant/RestaurantLayout';
 import RestaurantDashboard from './restaurant/RestaurantDashboard';
 import RestaurantMenuPage from './restaurant/RestaurantMenuPage';
 import DishFormPage from './restaurant/DishFormPage';
+import BulkDishesAddPage from './restaurant/BulkDishesAddPage';
 import RestaurantPlaceholder from './restaurant/RestaurantPlaceholder';
 import RestaurantProfilePage from './restaurant/RestaurantProfilePage';
 import RestaurantQrPage from './restaurant/RestaurantQrPage';
@@ -121,6 +122,14 @@ export default function AppRouter() {
                   element={
                     <ProtectedRestaurantRoute permission="addDish">
                       <DishFormPage mode="create" />
+                    </ProtectedRestaurantRoute>
+                  }
+                />
+                <Route
+                  path="menu/bulk"
+                  element={
+                    <ProtectedRestaurantRoute permission="addDish">
+                      <BulkDishesAddPage />
                     </ProtectedRestaurantRoute>
                   }
                 />

@@ -6,7 +6,7 @@ import {
 import { MembershipRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RestaurantContextService } from '../restaurant-context.service';
-import { CreateDishDto, UpdateDishDto } from './dto/dish.dto';
+import { CreateDishDto, UpdateDishDto, BulkDishesDto, BulkDishItemDto, BULK_DISH_BATCH_MAX } from './dto/dish.dto';
 
 const DEFAULT_CATEGORIES = [
   'South Indian',
@@ -177,6 +177,289 @@ export class RestaurantDishesService {
     });
 
     return this.toClientDish(dish);
+  }
+
+  /**
+   * Authoritative bulk validation (no writes).
+   * Categories must already exist for this restaurant — no silent create.
+   */
+  async validateBulkDishes(
+    user: { id: string; role: any; restaurantId?: string },
+    dto: BulkDishesDto,
+  ) {
+    const ctx = await this.restaurantContext.requireActiveMembership(user, [
+      MembershipRole.RESTAURANT_OWNER,
+      MembershipRole.RESTAURANT_MANAGER,
+      MembershipRole.RESTAURANT_STAFF,
+    ]);
+
+    const prepared = await this.prepareBulkRows(ctx.restaurantId, dto.dishes);
+    return {
+      total: prepared.rows.length,
+      valid: prepared.validCount,
+      invalid: prepared.invalidCount,
+      rows: prepared.rows,
+    };
+  }
+
+  /**
+   * Create dishes for authenticated restaurant only.
+   * All-or-nothing per request batch: any invalid row → no creates.
+   * Images must already be HTTPS Supabase URLs (client signed-upload).
+   */
+  async bulkCreateDishes(
+    user: { id: string; role: any; restaurantId?: string },
+    dto: BulkDishesDto,
+  ) {
+    const ctx = await this.restaurantContext.requireActiveMembership(user, [
+      MembershipRole.RESTAURANT_OWNER,
+      MembershipRole.RESTAURANT_MANAGER,
+      MembershipRole.RESTAURANT_STAFF,
+    ]);
+
+    if (!dto.dishes?.length) {
+      throw new BadRequestException('At least one dish is required.');
+    }
+    if (dto.dishes.length > BULK_DISH_BATCH_MAX) {
+      throw new BadRequestException(
+        `At most ${BULK_DISH_BATCH_MAX} dishes per request. Send batches.`,
+      );
+    }
+
+    const prepared = await this.prepareBulkRows(ctx.restaurantId, dto.dishes, {
+      requireImageUrl: false,
+    });
+
+    if (prepared.invalidCount > 0) {
+      throw new BadRequestException({
+        message: `${prepared.invalidCount} row(s) failed validation. No dishes were created.`,
+        total: prepared.rows.length,
+        valid: prepared.validCount,
+        invalid: prepared.invalidCount,
+        rows: prepared.rows,
+      });
+    }
+
+    const created: any[] = [];
+    const usedSlugs = new Set<string>();
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of prepared.rows) {
+        const item = row.payload!;
+        const category = prepared.categoryByName.get(
+          item.category.trim().toLowerCase(),
+        )!;
+        let slug = slugify(item.name.trim());
+        if (!slug) {
+          throw new BadRequestException(
+            `Row ${row.row}: dish name is invalid.`,
+          );
+        }
+        slug = await this.uniqueDishSlugTx(
+          tx,
+          ctx.restaurantId,
+          slug,
+          usedSlugs,
+        );
+        usedSlugs.add(slug);
+
+        const dish = await tx.dish.create({
+          data: {
+            restaurantId: ctx.restaurantId,
+            categoryId: category.id,
+            name: item.name.trim(),
+            slug,
+            description: item.description?.trim() || null,
+            price: item.price,
+            imageUrl: item.imageUrl?.trim() || null,
+            calories: item.calories ?? null,
+            protein: item.protein ?? null,
+            carbohydrates: item.carbohydrates ?? null,
+            fat: item.fat ?? null,
+            ingredients: toStringList(item.ingredients),
+            allergens: toStringList(item.allergens),
+            isVeg: item.isVeg ?? true,
+            isVegan: item.isVegan ?? false,
+            isJain: item.isJain ?? false,
+            isAvailable: item.isAvailable ?? item.available ?? true,
+            isPublished: item.isPublished ?? item.published ?? true,
+          },
+          include: { category: true },
+        });
+        created.push(this.toClientDish(dish));
+      }
+    });
+
+    return {
+      imported: created.length,
+      failed: 0,
+      dishes: created,
+      restaurantId: ctx.restaurantId,
+    };
+  }
+
+  private async prepareBulkRows(
+    restaurantId: string,
+    dishes: BulkDishItemDto[],
+    opts: { requireImageUrl?: boolean } = {},
+  ) {
+    const categories = await this.prisma.category.findMany({
+      where: { restaurantId, deletedAt: null },
+      select: { id: true, name: true, slug: true },
+    });
+    const categoryByName = new Map(
+      categories.map((c) => [c.name.trim().toLowerCase(), c]),
+    );
+
+    const existing = await this.prisma.dish.findMany({
+      where: { restaurantId, deletedAt: null },
+      select: { name: true },
+      take: 5000,
+    });
+    const existingNames = new Set(
+      existing.map((d) => d.name.trim().toLowerCase()),
+    );
+
+    const seenInBatch = new Map<string, number>();
+    const rows: Array<{
+      row: number;
+      name: string;
+      category: string;
+      price: number | null;
+      imageUrl: string;
+      status: 'valid' | 'invalid';
+      errors: Array<{ field: string; message: string }>;
+      payload?: BulkDishItemDto;
+    }> = [];
+
+    let validCount = 0;
+    let invalidCount = 0;
+
+    dishes.forEach((raw, index) => {
+      const rowNum = Number.isFinite(Number(raw.row))
+        ? Number(raw.row)
+        : index + 2;
+      const errors: Array<{ field: string; message: string }> = [];
+      const name = String(raw.name || '').trim();
+      const categoryName = String(raw.category || '').trim();
+      const price = Number(raw.price);
+      const imageUrl = String(raw.imageUrl || '').trim();
+
+      if (!name) {
+        errors.push({ field: 'name', message: 'Dish name is required.' });
+      } else if (name.length > 200) {
+        errors.push({
+          field: 'name',
+          message: 'Dish name must be at most 200 characters.',
+        });
+      }
+
+      if (!Number.isFinite(price) || price < 0.01) {
+        errors.push({
+          field: 'price',
+          message: 'Price must be greater than 0.',
+        });
+      }
+
+      if (!categoryName) {
+        errors.push({ field: 'category', message: 'Category is required.' });
+      } else if (!categoryByName.has(categoryName.toLowerCase())) {
+        errors.push({
+          field: 'category',
+          message: `Category "${categoryName}" does not exist for this restaurant.`,
+        });
+      }
+
+      if (imageUrl) {
+        if (/^data:/i.test(imageUrl)) {
+          errors.push({
+            field: 'imageUrl',
+            message: 'Base64 images are not allowed. Upload to storage first.',
+          });
+        } else if (!/^https?:\/\//i.test(imageUrl)) {
+          errors.push({
+            field: 'imageUrl',
+            message: 'Image URL must be an http(s) URL.',
+          });
+        }
+      } else if (opts.requireImageUrl) {
+        errors.push({ field: 'imageUrl', message: 'Image URL is required.' });
+      }
+
+      for (const key of [
+        'calories',
+        'protein',
+        'carbohydrates',
+        'fat',
+      ] as const) {
+        const v = raw[key];
+        if (v == null || v === ('' as any)) continue;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) {
+          errors.push({
+            field: key,
+            message: `${key} must be a number ≥ 0.`,
+          });
+        }
+      }
+
+      if (name) {
+        const key = name.toLowerCase();
+        if (existingNames.has(key)) {
+          errors.push({
+            field: 'name',
+            message: 'A dish with this name already exists.',
+          });
+        }
+        const firstRow = seenInBatch.get(key);
+        if (firstRow != null) {
+          errors.push({
+            field: 'name',
+            message: `Duplicate dish name in this import (also row ${firstRow}).`,
+          });
+        } else {
+          seenInBatch.set(key, rowNum);
+        }
+      }
+
+      const status = errors.length ? 'invalid' : 'valid';
+      if (status === 'valid') validCount += 1;
+      else invalidCount += 1;
+
+      rows.push({
+        row: rowNum,
+        name,
+        category: categoryName,
+        price: Number.isFinite(price) ? price : null,
+        imageUrl,
+        status,
+        errors,
+        payload: status === 'valid' ? raw : undefined,
+      });
+    });
+
+    return { rows, validCount, invalidCount, categoryByName };
+  }
+
+  private async uniqueDishSlugTx(
+    tx: Prisma.TransactionClient,
+    restaurantId: string,
+    base: string,
+    usedInBatch: Set<string>,
+  ) {
+    let slug = base;
+    let i = 2;
+    for (;;) {
+      if (!usedInBatch.has(slug)) {
+        const clash = await tx.dish.findFirst({
+          where: { restaurantId, slug, deletedAt: null },
+          select: { id: true },
+        });
+        if (!clash) return slug;
+      }
+      slug = `${base}-${i}`;
+      i += 1;
+    }
   }
 
   async updateDish(

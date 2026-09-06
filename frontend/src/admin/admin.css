@@ -990,3 +990,156 @@
     background: #fff;
   }
 }
+
+/* Bulk Dishes Add */
+.bulk-dishes-card {
+  display: grid;
+  gap: 18px;
+}
+
+.bulk-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: bulk-step;
+  color: var(--admin-muted, #a8a29e);
+  font-size: 12px;
+}
+
+.bulk-steps li {
+  counter-increment: bulk-step;
+}
+
+.bulk-steps li::before {
+  content: counter(bulk-step) '. ';
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.bulk-section h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.bulk-divider {
+  border: none;
+  border-top: 1px solid rgba(251, 191, 36, 0.16);
+  margin: 4px 0;
+}
+
+.bulk-file-ok {
+  margin: 10px 0 0;
+  color: #86efac;
+  font-weight: 600;
+}
+
+.bulk-image-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 140px;
+  overflow: auto;
+  color: #d6d3d1;
+  font-size: 13px;
+}
+
+.bulk-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  font-weight: 700;
+}
+
+.bulk-ok {
+  color: #86efac;
+}
+
+.bulk-bad {
+  color: #fca5a5;
+}
+
+.bulk-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid rgba(251, 191, 36, 0.12);
+  border-radius: 12px;
+}
+
+.bulk-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+  font-size: 13px;
+}
+
+.bulk-preview-table th,
+.bulk-preview-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+
+.bulk-preview-table th {
+  color: #a8a29e;
+  font-weight: 600;
+  background: #1c1917;
+  position: sticky;
+  top: 0;
+}
+
+.bulk-preview-table tr.is-error {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.bulk-dish-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bulk-thumb,
+.bulk-thumb-placeholder {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #292524;
+}
+
+.bulk-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.bulk-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bulk-progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #292524;
+  overflow: hidden;
+}
+
+.bulk-progress-fill {
+  height: 100%;
+  background: #fbbf24;
+  transition: width 0.2s ease;
+}
+
+.bulk-error-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #fca5a5;
+  font-size: 13px;
+  max-height: 200px;
+  overflow: auto;
+}

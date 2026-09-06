@@ -47,9 +47,14 @@ export async function apiRequest(path, options = {}) {
 
   if (!res.ok) {
     const message =
-      (Array.isArray(data?.message) ? data.message.join(', ') : data?.message) ||
-      'Request failed.';
-    const err = new Error(message);
+      typeof data?.message === 'object' && data?.message?.message
+        ? data.message.message
+        : Array.isArray(data?.message)
+          ? data.message.join(', ')
+          : data?.message || 'Request failed.';
+    const err = new Error(
+      typeof message === 'string' ? message : 'Request failed.',
+    );
     err.code =
       res.status === 401
         ? 'UNAUTHORIZED'
@@ -63,6 +68,7 @@ export async function apiRequest(path, options = {}) {
                 ? 'VALIDATION'
                 : 'ERROR';
     err.status = res.status;
+    err.data = typeof data?.message === 'object' ? data.message : data;
     throw err;
   }
 

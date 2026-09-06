@@ -200,6 +200,33 @@ export async function createMenuItem(payload) {
   });
 }
 
+/**
+ * Authoritative bulk validation (no DB writes). Max 50 dishes per call.
+ * @param {object[]} dishes
+ */
+export async function validateBulkDishes(dishes) {
+  await withSession('addDish');
+  return apiRequest('/restaurants/me/dishes/bulk/validate', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ dishes }),
+  });
+}
+
+/**
+ * Bulk create dishes for the authenticated restaurant only.
+ * Images must already be HTTPS storage URLs (not Base64).
+ * @param {object[]} dishes
+ */
+export async function bulkCreateDishes(dishes) {
+  await withSession('addDish');
+  return apiRequest('/restaurants/me/dishes/bulk', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ dishes }),
+  });
+}
+
 export async function updateMenuItem(dishId, payload) {
   await withSession('editDish');
   return apiRequest(`/restaurants/me/dishes/${encodeURIComponent(dishId)}`, {

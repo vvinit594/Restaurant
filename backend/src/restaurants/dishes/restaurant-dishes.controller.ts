@@ -14,7 +14,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { CreateDishDto, UpdateDishDto } from './dto/dish.dto';
+import { CreateDishDto, UpdateDishDto, BulkDishesDto } from './dto/dish.dto';
 import { RestaurantDishesService } from './restaurant-dishes.service';
 
 @Controller('restaurants/me')
@@ -39,6 +39,16 @@ export class RestaurantDishesController {
     @Query('category') category?: string,
   ) {
     return this.dishesService.listDishes(user, { search, category });
+  }
+
+  @Post('dishes/bulk/validate')
+  validateBulkDishes(@CurrentUser() user: any, @Body() dto: BulkDishesDto) {
+    return this.dishesService.validateBulkDishes(user, dto);
+  }
+
+  @Post('dishes/bulk')
+  bulkCreateDishes(@CurrentUser() user: any, @Body() dto: BulkDishesDto) {
+    return this.dishesService.bulkCreateDishes(user, dto);
   }
 
   @Get('dishes/:id')
