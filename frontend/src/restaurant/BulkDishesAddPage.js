@@ -1,16 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../admin/components/Toast';
 import { IMAGE_ACCEPT, uploadImage } from '../services/mediaApi';
 import {
   BULK_API_BATCH_SIZE,
   BULK_UPLOAD_CONCURRENCY,
+  buildImageMatchSummary,
   chunkArray,
   downloadBulkDishTemplate,
   downloadBulkErrorReport,
+  extractImagesFromZip,
   indexImageFiles,
   parseBulkDishExcel,
   revokePreviewThumbs,
+  supportsDirectoryUpload,
   validateBulkPreview,
 } from '../services/bulkDishImport';
 import {
@@ -25,27 +28,57 @@ const STEP_PREVIEW = 'preview';
 const STEP_IMPORTING = 'importing';
 const STEP_DONE = 'done';
 
+const EMPTY_IMAGES = {
+  map: new Map(),
+  count: 0,
+  files: [],
+  supported: [],
+  unsupported: [],
+  oversized: [],
+  duplicates: [],
+  byType: { jpg: 0, png: 0, webp: 0 },
+  totalBytes: 0,
+  totalBytesLabel: '0 B',
+  scannedCount: 0,
+  source: 'folder',
+};
+
 export default function BulkDishesAddPage() {
   const { user } = useRestaurantAuth();
   const { push } = useToast();
   const excelInputRef = useRef(null);
-  const imagesInputRef = useRef(null);
+  const folderInputRef = useRef(null);
+  const zipInputRef = useRef(null);
+  const manualInputRef = useRef(null);
+  const folderSupported = useMemo(() => supportsDirectoryUpload(), []);
 
   const [step, setStep] = useState(STEP_UPLOAD);
   const [categories, setCategories] = useState([]);
   const [existingNames, setExistingNames] = useState(new Set());
   const [excelFile, setExcelFile] = useState(null);
   const [excelRows, setExcelRows] = useState([]);
-  const [imageIndex, setImageIndex] = useState({ map: new Map(), count: 0, files: [] });
+  const [imageIndex, setImageIndex] = useState(EMPTY_IMAGES);
+  const [matchDetailsOpen, setMatchDetailsOpen] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
   const [preview, setPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState({
+    phase: 'images',
     imagesDone: 0,
     imagesTotal: 0,
     dishesDone: 0,
     dishesTotal: 0,
   });
   const [result, setResult] = useState(null);
+  const [retryRows, setRetryRows] = useState([]);
+
+  const matchSummary = useMemo(
+    () =>
+      excelRows.length && imageIndex.scannedCount > 0
+        ? buildImageMatchSummary(excelRows, imageIndex)
+        : null,
+    [excelRows, imageIndex],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -75,6 +108,16 @@ export default function BulkDishesAddPage() {
     };
   }, [preview]);
 
+  const applyImageIndex = (indexed, toastMsg) => {
+    setImageIndex(indexed);
+    setPreview(null);
+    setResult(null);
+    setRetryRows([]);
+    setMatchDetailsOpen(false);
+    setStep(STEP_UPLOAD);
+    if (toastMsg) push(toastMsg);
+  };
+
   const onExcelChange = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -95,6 +138,7 @@ export default function BulkDishesAddPage() {
       setPreview(null);
       setStep(STEP_UPLOAD);
       setResult(null);
+      setRetryRows([]);
       if (parsed.warnings.length) {
         push(`Loaded ${parsed.rows.length} rows (${parsed.warnings.length} example rows skipped).`);
       } else {
@@ -105,15 +149,44 @@ export default function BulkDishesAddPage() {
     }
   };
 
-  const onImagesChange = (e) => {
+  const onFolderChange = (e) => {
     const files = e.target.files;
     e.target.value = '';
     if (!files?.length) return;
-    const indexed = indexImageFiles(files);
-    setImageIndex(indexed);
-    setPreview(null);
-    setResult(null);
-    push(`${indexed.count} image${indexed.count === 1 ? '' : 's'} selected.`);
+    const indexed = indexImageFiles(files, { source: 'folder' });
+    applyImageIndex(
+      indexed,
+      `✓ ${indexed.count} image${indexed.count === 1 ? '' : 's'} detected in folder.`,
+    );
+  };
+
+  const onZipChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setZipBusy(true);
+    try {
+      const indexed = await extractImagesFromZip(file);
+      applyImageIndex(
+        indexed,
+        `✓ ${indexed.count} image${indexed.count === 1 ? '' : 's'} extracted from ZIP (client-side only).`,
+      );
+    } catch (err) {
+      push(err.message || 'Could not read ZIP file.', 'error');
+    } finally {
+      setZipBusy(false);
+    }
+  };
+
+  const onManualImagesChange = (e) => {
+    const files = e.target.files;
+    e.target.value = '';
+    if (!files?.length) return;
+    const indexed = indexImageFiles(files, { source: 'manual' });
+    applyImageIndex(
+      indexed,
+      `${indexed.count} image${indexed.count === 1 ? '' : 's'} selected.`,
+    );
   };
 
   const onValidatePreview = () => {
@@ -131,12 +204,135 @@ export default function BulkDishesAddPage() {
     setPreview(next);
     setStep(STEP_PREVIEW);
     setResult(null);
+    setRetryRows([]);
   };
 
   const onCancelPreview = () => {
     if (preview?.rows) revokePreviewThumbs(preview.rows);
     setPreview(null);
     setStep(STEP_UPLOAD);
+  };
+
+  const uploadRowsWithRetry = async (rows, { maxAttempts = 2 } = {}) => {
+    const withUrls = [];
+    const failed = [];
+    let imagesUploaded = 0;
+    const needImages = rows.filter((r) => r.payload?._imageFile);
+    setProgress((p) => ({
+      ...p,
+      phase: 'images',
+      imagesDone: 0,
+      imagesTotal: needImages.length,
+    }));
+
+    const queue = [...rows];
+    let cursor = 0;
+
+    const uploadOne = async (row) => {
+      const payload = { ...row.payload };
+      const file = payload._imageFile;
+      delete payload._imageFile;
+      if (!file) return payload;
+
+      let lastErr = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const uploaded = await uploadImage(file, {
+            kind: 'dish',
+            restaurantId: user?.restaurantId,
+          });
+          payload.imageUrl = uploaded.url;
+          imagesUploaded += 1;
+          setProgress((p) => ({ ...p, imagesDone: p.imagesDone + 1 }));
+          return payload;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      failed.push({
+        row: row.row,
+        name: row.name,
+        field: 'imageFile',
+        message: lastErr?.message || 'Image upload failed.',
+        previewRow: row,
+      });
+      setProgress((p) => ({ ...p, imagesDone: p.imagesDone + 1 }));
+      return null;
+    };
+
+    const workers = Array.from(
+      { length: Math.min(BULK_UPLOAD_CONCURRENCY, Math.max(queue.length, 1)) },
+      async () => {
+        while (cursor < queue.length) {
+          const idx = cursor;
+          cursor += 1;
+          const payload = await uploadOne(queue[idx]);
+          if (payload) withUrls.push(payload);
+        }
+      },
+    );
+    await Promise.all(workers);
+    return { withUrls, failed, imagesUploaded };
+  };
+
+  const createDishBatches = async (withUrls) => {
+    let imported = 0;
+    const failedDuringImport = [];
+    setProgress((p) => ({
+      ...p,
+      phase: 'dishes',
+      dishesDone: 0,
+      dishesTotal: withUrls.length,
+    }));
+
+    const batches = chunkArray(withUrls, BULK_API_BATCH_SIZE);
+    for (const batch of batches) {
+      try {
+        const clean = batch.map((d) => {
+          const body = { ...d };
+          Object.keys(body).forEach((k) => {
+            if (body[k] === undefined || Number.isNaN(body[k])) delete body[k];
+          });
+          return body;
+        });
+        const res = await bulkCreateDishes(clean);
+        imported += Number(res?.imported || clean.length);
+        setProgress((p) => ({
+          ...p,
+          dishesDone: Math.min(p.dishesTotal, p.dishesDone + clean.length),
+        }));
+      } catch (err) {
+        const detailRows = err?.data?.rows || [];
+        if (Array.isArray(detailRows) && detailRows.length) {
+          detailRows
+            .filter((r) => r.status === 'invalid')
+            .forEach((r) => {
+              (r.errors || []).forEach((e) => {
+                failedDuringImport.push({
+                  row: r.row,
+                  name: r.name,
+                  field: e.field,
+                  message: e.message,
+                });
+              });
+            });
+        } else {
+          batch.forEach((d) => {
+            failedDuringImport.push({
+              row: d.row,
+              name: d.name,
+              field: 'import',
+              message: err.message || 'Import failed for this batch.',
+            });
+          });
+        }
+        setProgress((p) => ({
+          ...p,
+          dishesDone: Math.min(p.dishesTotal, p.dishesDone + batch.length),
+        }));
+      }
+    }
+    return { imported, failedDuringImport };
   };
 
   const onImportValid = async () => {
@@ -149,119 +345,22 @@ export default function BulkDishesAddPage() {
 
     setImporting(true);
     setStep(STEP_IMPORTING);
-    const needImages = validRows.filter((r) => r.payload._imageFile);
-    setProgress({
-      imagesDone: 0,
-      imagesTotal: needImages.length,
-      dishesDone: 0,
-      dishesTotal: validRows.length,
-    });
-
-    const failedDuringImport = [];
-    let imported = 0;
-    let imagesUploaded = 0;
 
     try {
-      // 1) Upload images via existing signed Supabase flow
-      const withUrls = [];
-      const queue = [...validRows];
+      const { withUrls, failed: uploadFailed, imagesUploaded } =
+        await uploadRowsWithRetry(validRows, { maxAttempts: 2 });
 
-      const uploadOne = async (row) => {
-        const payload = { ...row.payload };
-        const file = payload._imageFile;
-        delete payload._imageFile;
-        if (file) {
-          try {
-            const uploaded = await uploadImage(file, {
-              kind: 'dish',
-              restaurantId: user?.restaurantId,
-            });
-            payload.imageUrl = uploaded.url;
-            imagesUploaded += 1;
-            setProgress((p) => ({ ...p, imagesDone: p.imagesDone + 1 }));
-          } catch (err) {
-            failedDuringImport.push({
-              row: row.row,
-              name: row.name,
-              field: 'imageFile',
-              message: err.message || 'Image upload failed.',
-            });
-            setProgress((p) => ({ ...p, imagesDone: p.imagesDone + 1 }));
-            return null;
-          }
-        }
-        return payload;
-      };
+      const { imported, failedDuringImport } = await createDishBatches(withUrls);
+      const allErrors = [...uploadFailed.map(({ previewRow, ...rest }) => rest), ...failedDuringImport];
+      const retryable = uploadFailed
+        .map((f) => f.previewRow)
+        .filter(Boolean);
 
-      // Controlled concurrency for uploads
-      let cursor = 0;
-      const workers = Array.from(
-        { length: Math.min(BULK_UPLOAD_CONCURRENCY, queue.length) },
-        async () => {
-          while (cursor < queue.length) {
-            const idx = cursor;
-            cursor += 1;
-            const payload = await uploadOne(queue[idx]);
-            if (payload) withUrls.push(payload);
-          }
-        },
-      );
-      await Promise.all(workers);
-
-      // 2) Create dishes in JSON batches (restaurant from JWT only)
-      const batches = chunkArray(withUrls, BULK_API_BATCH_SIZE);
-      for (const batch of batches) {
-        try {
-          const clean = batch.map((d) => {
-            const body = { ...d };
-            Object.keys(body).forEach((k) => {
-              if (body[k] === undefined || Number.isNaN(body[k])) delete body[k];
-            });
-            return body;
-          });
-          const res = await bulkCreateDishes(clean);
-          imported += Number(res?.imported || clean.length);
-          setProgress((p) => ({
-            ...p,
-            dishesDone: Math.min(p.dishesTotal, p.dishesDone + clean.length),
-          }));
-        } catch (err) {
-          const detailRows = err?.data?.rows || [];
-          if (Array.isArray(detailRows) && detailRows.length) {
-            detailRows
-              .filter((r) => r.status === 'invalid')
-              .forEach((r) => {
-                (r.errors || []).forEach((e) => {
-                  failedDuringImport.push({
-                    row: r.row,
-                    name: r.name,
-                    field: e.field,
-                    message: e.message,
-                  });
-                });
-              });
-          } else {
-            batch.forEach((d) => {
-              failedDuringImport.push({
-                row: d.row,
-                name: d.name,
-                field: 'import',
-                message: err.message || 'Import failed for this batch.',
-              });
-            });
-          }
-          setProgress((p) => ({
-            ...p,
-            dishesDone: Math.min(p.dishesTotal, p.dishesDone + batch.length),
-          }));
-        }
-      }
-
-      const skippedInvalid = preview.invalidCount;
+      setRetryRows(retryable);
       setResult({
         imported,
-        skippedInvalid,
-        importErrors: failedDuringImport,
+        skippedInvalid: preview.invalidCount,
+        importErrors: allErrors,
         imagesUploaded,
       });
       setStep(STEP_DONE);
@@ -278,6 +377,36 @@ export default function BulkDishesAddPage() {
     }
   };
 
+  const onRetryFailedUploads = async () => {
+    if (!retryRows.length || importing) return;
+    setImporting(true);
+    setStep(STEP_IMPORTING);
+    try {
+      const { withUrls, failed: uploadFailed, imagesUploaded } =
+        await uploadRowsWithRetry(retryRows, { maxAttempts: 2 });
+      const { imported, failedDuringImport } = await createDishBatches(withUrls);
+      const allErrors = [
+        ...uploadFailed.map(({ previewRow, ...rest }) => rest),
+        ...failedDuringImport,
+      ];
+      setRetryRows(uploadFailed.map((f) => f.previewRow).filter(Boolean));
+      setResult((prev) => ({
+        imported: (prev?.imported || 0) + imported,
+        skippedInvalid: prev?.skippedInvalid || 0,
+        importErrors: allErrors,
+        imagesUploaded: (prev?.imagesUploaded || 0) + imagesUploaded,
+      }));
+      setStep(STEP_DONE);
+      if (imported > 0) push(`Retry imported ${imported} more dish${imported === 1 ? '' : 'es'}.`);
+      else push('Retry did not import any dishes.', 'error');
+    } catch (err) {
+      push(err.message || 'Retry failed.', 'error');
+      setStep(STEP_DONE);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const failedTotal =
     (result?.skippedInvalid || 0) + (result?.importErrors?.length || 0);
 
@@ -287,8 +416,8 @@ export default function BulkDishesAddPage() {
         <div>
           <h1>Bulk Add Dishes</h1>
           <p className="admin-muted">
-            Add hundreds of dishes at once using an Excel spreadsheet and matching
-            image files. Saving to <strong>{user?.restaurantName}</strong> only.
+            Add hundreds of dishes at once using an Excel spreadsheet and a folder of
+            matching image files. Saving to <strong>{user?.restaurantName}</strong> only.
           </p>
         </div>
         <Link to="/restaurant/menu" className="admin-btn admin-btn-ghost">
@@ -302,7 +431,7 @@ export default function BulkDishesAddPage() {
             <li>Download Template</li>
             <li>Fill Excel</li>
             <li>Select Excel</li>
-            <li>Select Images</li>
+            <li>Select Image Folder</li>
             <li>Validate &amp; Preview</li>
             <li>Import Dishes</li>
           </ol>
@@ -347,39 +476,173 @@ export default function BulkDishesAddPage() {
           </div>
 
           <div className="bulk-section">
-            <h2>3. Upload Dish Images</h2>
+            <h2>3. Select Dish Image Folder</h2>
             <p className="admin-muted">
-              Select JPG, PNG, or WebP files whose names match the{' '}
-              <code>imageFile</code> column (max 3MB each).
+              Select the folder containing all dish images. Filenames must match the{' '}
+              <code>imageFile</code> column in Excel (nested folders are OK). Images are
+              not uploaded until you confirm import.
             </p>
+
             <input
-              ref={imagesInputRef}
+              ref={folderInputRef}
+              type="file"
+              accept={IMAGE_ACCEPT}
+              multiple
+              {...{ webkitdirectory: '', directory: '' }}
+              hidden
+              onChange={onFolderChange}
+            />
+            <input
+              ref={zipInputRef}
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              onChange={onZipChange}
+            />
+            <input
+              ref={manualInputRef}
               type="file"
               accept={IMAGE_ACCEPT}
               multiple
               hidden
-              onChange={onImagesChange}
+              onChange={onManualImagesChange}
             />
-            <button
-              type="button"
-              className="admin-btn admin-btn-primary"
-              onClick={() => imagesInputRef.current?.click()}
-            >
-              Choose Images
-            </button>
-            {imageIndex.count > 0 ? (
+
+            <div className="bulk-image-actions">
+              {folderSupported ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-primary"
+                  onClick={() => folderInputRef.current?.click()}
+                >
+                  Select Image Folder
+                </button>
+              ) : (
+                <p className="bulk-warn">
+                  Folder selection is not supported in this browser. Use ZIP upload or
+                  select images manually.
+                </p>
+              )}
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                disabled={zipBusy}
+                onClick={() => zipInputRef.current?.click()}
+              >
+                {zipBusy ? 'Reading ZIP…' : 'Upload ZIP'}
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={() => manualInputRef.current?.click()}
+              >
+                Select Images Manually
+              </button>
+            </div>
+
+            {imageIndex.count > 0 || imageIndex.scannedCount > 0 ? (
               <div className="bulk-image-summary">
                 <p className="bulk-file-ok">
-                  ✓ {imageIndex.count} image{imageIndex.count === 1 ? '' : 's'} selected
+                  ✓ {imageIndex.count} image{imageIndex.count === 1 ? '' : 's'} detected
+                  {imageIndex.source === 'zip'
+                    ? ' (from ZIP)'
+                    : imageIndex.source === 'manual'
+                      ? ' (manual)'
+                      : ' (from folder)'}
                 </p>
-                <ul className="bulk-image-list">
-                  {imageIndex.files.slice(0, 12).map((f) => (
-                    <li key={f.name}>{f.name}</li>
-                  ))}
-                  {imageIndex.files.length > 12 ? (
-                    <li>…and {imageIndex.files.length - 12} more</li>
-                  ) : null}
+                <ul className="bulk-type-stats">
+                  <li>JPG {imageIndex.byType?.jpg || 0}</li>
+                  <li>PNG {imageIndex.byType?.png || 0}</li>
+                  <li>WEBP {imageIndex.byType?.webp || 0}</li>
+                  <li>Total size {imageIndex.totalBytesLabel}</li>
                 </ul>
+                {imageIndex.unsupported?.length ? (
+                  <p className="bulk-warn">
+                    {imageIndex.unsupported.length} unsupported file
+                    {imageIndex.unsupported.length === 1 ? '' : 's'} ignored
+                  </p>
+                ) : null}
+                {imageIndex.duplicates?.length ? (
+                  <p className="bulk-warn">
+                    {imageIndex.duplicates.length} duplicate filename
+                    {imageIndex.duplicates.length === 1 ? '' : 's'} — resolve before import
+                  </p>
+                ) : null}
+
+                {matchSummary && excelRows.length ? (
+                  <div className="bulk-match-box">
+                    <h3>Image Matching</h3>
+                    <div className="bulk-summary">
+                      <span>Excel rows: {matchSummary.excelRows}</span>
+                      <span>Images detected: {matchSummary.imagesDetected}</span>
+                    </div>
+                    <div className="bulk-summary">
+                      <span className="bulk-ok">✓ Matched: {matchSummary.matchedCount}</span>
+                      <span className="bulk-bad">✗ Missing: {matchSummary.missingCount}</span>
+                      <span className="bulk-warn-text">⚠ Extra: {matchSummary.extraCount}</span>
+                      {matchSummary.ambiguousCount ? (
+                        <span className="bulk-warn-text">
+                          ⚠ Ambiguous: {matchSummary.ambiguousCount}
+                        </span>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-ghost"
+                      onClick={() => setMatchDetailsOpen((v) => !v)}
+                    >
+                      {matchDetailsOpen ? 'Hide Matching Details' : 'View Matching Details'}
+                    </button>
+                    {matchDetailsOpen ? (
+                      <div className="bulk-match-details">
+                        {matchSummary.missingCount ? (
+                          <div>
+                            <strong>Missing Images</strong>
+                            <p className="admin-muted">
+                              Referenced by Excel but not found in the selected folder.
+                              Those rows will not be marked valid.
+                            </p>
+                            <ul className="bulk-image-list">
+                              {matchSummary.missing.slice(0, 40).map((n) => (
+                                <li key={`m-${n}`}>✗ {n}</li>
+                              ))}
+                              {matchSummary.missing.length > 40 ? (
+                                <li>…and {matchSummary.missing.length - 40} more</li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {matchSummary.extraCount ? (
+                          <div>
+                            <strong>Extra Images</strong>
+                            <p className="admin-muted">
+                              Present in the folder but not referenced by Excel. They will
+                              not be uploaded.
+                            </p>
+                            <ul className="bulk-image-list">
+                              {matchSummary.extra.slice(0, 40).map((n) => (
+                                <li key={`e-${n}`}>⚠ {n}</li>
+                              ))}
+                              {matchSummary.extra.length > 40 ? (
+                                <li>…and {matchSummary.extra.length - 40} more</li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {matchSummary.ambiguousCount ? (
+                          <div>
+                            <strong>Duplicate Filenames</strong>
+                            <ul className="bulk-image-list">
+                              {matchSummary.ambiguous.map((n) => (
+                                <li key={`a-${n}`}>⚠ {n}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -488,20 +751,21 @@ export default function BulkDishesAddPage() {
 
       {step === STEP_IMPORTING ? (
         <div className="admin-form-card bulk-dishes-card">
-          <h2>Importing dishes…</h2>
+          <h2>
+            {progress.phase === 'images'
+              ? 'Uploading dish images…'
+              : 'Creating dishes…'}
+          </h2>
           <ProgressBar
-            label="Images"
+            label={`Images ${progress.imagesDone} / ${progress.imagesTotal}`}
             done={progress.imagesDone}
             total={progress.imagesTotal}
           />
           <ProgressBar
-            label="Dishes"
+            label={`Dishes ${progress.dishesDone} / ${progress.dishesTotal}`}
             done={progress.dishesDone}
             total={progress.dishesTotal}
           />
-          <p className="admin-muted">
-            {progress.dishesDone} / {progress.dishesTotal} processed
-          </p>
         </div>
       ) : null}
 
@@ -510,8 +774,8 @@ export default function BulkDishesAddPage() {
           <h2>Bulk Import Complete</h2>
           <div className="bulk-summary">
             <span className="bulk-ok">✓ {result.imported} dishes imported</span>
+            <span className="bulk-ok">✓ {result.imagesUploaded} images uploaded</span>
             <span className="bulk-bad">✗ {failedTotal} rows failed / skipped</span>
-            <span>Images uploaded: {result.imagesUploaded}</span>
           </div>
           {result.importErrors?.length ? (
             <ul className="bulk-error-list">
@@ -526,6 +790,16 @@ export default function BulkDishesAddPage() {
             <Link to="/restaurant/menu" className="admin-btn admin-btn-primary">
               View All Dishes
             </Link>
+            {retryRows.length ? (
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                disabled={importing}
+                onClick={onRetryFailedUploads}
+              >
+                Retry Failed Uploads ({retryRows.length})
+              </button>
+            ) : null}
             {(preview?.invalidCount > 0 || result.importErrors?.length > 0) && (
               <button
                 type="button"
@@ -554,9 +828,10 @@ export default function BulkDishesAddPage() {
                 if (preview?.rows) revokePreviewThumbs(preview.rows);
                 setExcelFile(null);
                 setExcelRows([]);
-                setImageIndex({ map: new Map(), count: 0, files: [] });
+                setImageIndex(EMPTY_IMAGES);
                 setPreview(null);
                 setResult(null);
+                setRetryRows([]);
                 setStep(STEP_UPLOAD);
               }}
             >
@@ -577,7 +852,13 @@ function ProgressBar({ label, done, total }) {
         <span>{label}</span>
         <span>{total ? `${pct}%` : '—'}</span>
       </div>
-      <div className="bulk-progress-track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div
+        className="bulk-progress-track"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         <div className="bulk-progress-fill" style={{ width: `${pct}%` }} />
       </div>
     </div>

@@ -3,7 +3,7 @@
  * Images are matched by filename (imageFile), never embedded as Base64.
  */
 import * as XLSX from 'xlsx';
-import { IMAGE_MAX_BYTES, validateImageFile } from './mediaApi';
+import { IMAGE_MAX_BYTES, IMAGE_ERROR_SIZE, validateImageFile } from './mediaApi';
 
 export const BULK_EXCEL_COLUMNS = [
   'name',
@@ -231,18 +231,245 @@ export function parseBulkDishExcel(buffer) {
   return { rows, warnings };
 }
 
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
+const ZIP_MAX_BYTES = 80 * 1024 * 1024;
+
+/** Basename from File.name or webkitRelativePath (folder uploads). */
+export function imageBasename(file) {
+  const rel = String(file?.webkitRelativePath || '').replace(/\\/g, '/');
+  const fromRel = rel.split('/').pop();
+  const fromName = String(file?.name || '').replace(/\\/g, '/').split('/').pop();
+  return String(fromRel || fromName || '').trim();
+}
+
+export function imageExtKind(name) {
+  const m = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!m) return 'other';
+  if (m[1] === 'jpeg' || m[1] === 'jpg') return 'jpg';
+  if (m[1] === 'png') return 'png';
+  if (m[1] === 'webp') return 'webp';
+  return 'other';
+}
+
+export function supportsDirectoryUpload() {
+  if (typeof document === 'undefined') return false;
+  const input = document.createElement('input');
+  return 'webkitdirectory' in input || 'directory' in input;
+}
+
+function formatBytes(n) {
+  const bytes = Number(n) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
- * Build a filename → File map (case-insensitive basename).
+ * Index image File objects from a folder picker, ZIP extract, or manual multi-select.
+ * Matching key = case-insensitive basename only (nested paths OK).
+ * Duplicate basenames are tracked and excluded from the match map.
  * @param {FileList|File[]} files
+ * @param {{ source?: 'folder'|'zip'|'manual' }} [opts]
  */
-export function indexImageFiles(files) {
-  const map = new Map();
+export function indexImageFiles(files, opts = {}) {
   const list = Array.from(files || []);
+  const byBase = new Map(); // lower → File[]
+  const supported = [];
+  const unsupported = [];
+  const byType = { jpg: 0, png: 0, webp: 0 };
+  let totalBytes = 0;
+
   for (const file of list) {
-    const base = String(file.name || '').split(/[/\\]/).pop() || '';
-    map.set(base.toLowerCase(), file);
+    const base = imageBasename(file);
+    if (!base || base.startsWith('.')) continue;
+    totalBytes += Number(file.size) || 0;
+
+    if (!IMAGE_EXT_RE.test(base)) {
+      unsupported.push({ name: base, reason: 'Unsupported format' });
+      continue;
+    }
+
+    const key = base.toLowerCase();
+    if (!byBase.has(key)) byBase.set(key, []);
+    byBase.get(key).push(file);
   }
-  return { map, count: list.length, files: list };
+
+  const map = new Map();
+  const duplicates = [];
+  const filesOut = [];
+  const oversized = [];
+
+  for (const [key, group] of byBase.entries()) {
+    if (group.length > 1) {
+      duplicates.push({
+        name: imageBasename(group[0]),
+        count: group.length,
+        paths: group.map((f) => f.webkitRelativePath || f.name),
+      });
+      // Do not silently pick one — matching will fail until resolved
+      continue;
+    }
+    const file = group[0];
+    const base = imageBasename(file);
+    const kind = imageExtKind(base);
+    if (kind in byType) byType[kind] += 1;
+
+    if (file.size > IMAGE_MAX_BYTES) {
+      oversized.push({ name: base, size: file.size, reason: IMAGE_ERROR_SIZE });
+    }
+
+    map.set(key, file);
+    supported.push(file);
+    filesOut.push(file);
+  }
+
+  return {
+    map,
+    count: supported.length,
+    files: filesOut,
+    supported,
+    unsupported,
+    oversized,
+    duplicates,
+    byType,
+    totalBytes,
+    totalBytesLabel: formatBytes(totalBytes),
+    scannedCount: list.length,
+    source: opts.source || 'folder',
+  };
+}
+
+/**
+ * Match Excel imageFile values against an indexed folder/ZIP.
+ * Extra images are listed but never uploaded unless referenced.
+ */
+export function buildImageMatchSummary(excelRows, imageIndex) {
+  const needed = new Map(); // lower basename → display name
+  (excelRows || []).forEach((row) => {
+    const name = cellStr(row.imageFile);
+    if (!name) return;
+    const key = name.replace(/\\/g, '/').split('/').pop().toLowerCase();
+    if (!key) return;
+    if (!needed.has(key)) needed.set(key, name.replace(/\\/g, '/').split('/').pop());
+  });
+
+  const matched = [];
+  const missing = [];
+  const ambiguous = [];
+
+  for (const [key, display] of needed.entries()) {
+    const dup = (imageIndex.duplicates || []).find(
+      (d) => d.name.toLowerCase() === key,
+    );
+    if (dup) {
+      ambiguous.push(display);
+      continue;
+    }
+    if (imageIndex.map?.has(key)) matched.push(display);
+    else missing.push(display);
+  }
+
+  const neededKeys = new Set(needed.keys());
+  const extra = (imageIndex.supported || imageIndex.files || [])
+    .map((f) => imageBasename(f))
+    .filter((name) => name && !neededKeys.has(name.toLowerCase()));
+
+  return {
+    excelRows: (excelRows || []).length,
+    excelWithImage: needed.size,
+    imagesDetected: imageIndex.count || 0,
+    scannedCount: imageIndex.scannedCount || 0,
+    matchedCount: matched.length,
+    missingCount: missing.length,
+    extraCount: extra.length,
+    ambiguousCount: ambiguous.length,
+    matched,
+    missing,
+    extra,
+    ambiguous,
+    byType: imageIndex.byType || { jpg: 0, png: 0, webp: 0 },
+    unsupported: imageIndex.unsupported || [],
+    duplicates: imageIndex.duplicates || [],
+    totalBytesLabel: imageIndex.totalBytesLabel || formatBytes(0),
+    source: imageIndex.source || 'folder',
+  };
+}
+
+/**
+ * Client-side ZIP extract — never sent to Nest/Vercel.
+ * Returns File objects for supported image entries only.
+ * @param {File} zipFile
+ */
+export async function extractImagesFromZip(zipFile) {
+  if (!zipFile) {
+    const err = new Error('ZIP file is required.');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+  if (!/\.zip$/i.test(zipFile.name || '')) {
+    const err = new Error('Please select a .zip file.');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+  if (zipFile.size > ZIP_MAX_BYTES) {
+    const err = new Error('ZIP file must be smaller than 80MB.');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  let JSZip;
+  try {
+    JSZip = (await import('jszip')).default;
+  } catch {
+    const err = new Error('ZIP support is unavailable in this build.');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(zipFile);
+  } catch {
+    const err = new Error('ZIP file could not be read.');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  const files = [];
+  const entries = Object.values(zip.files || {});
+  for (const entry of entries) {
+    if (!entry || entry.dir) continue;
+    const path = String(entry.name || '').replace(/\\/g, '/');
+    if (path.includes('__MACOSX/') || /(^|\/)\./.test(path)) continue;
+    const base = path.split('/').pop() || '';
+    if (!IMAGE_EXT_RE.test(base)) continue;
+
+    const blob = await entry.async('blob');
+    const type = /\.png$/i.test(base)
+      ? 'image/png'
+      : /\.webp$/i.test(base)
+        ? 'image/webp'
+        : 'image/jpeg';
+    const file = new File([blob], base, { type, lastModified: Date.now() });
+    // Preserve relative path for diagnostics (not used as storage key)
+    try {
+      Object.defineProperty(file, 'webkitRelativePath', {
+        value: path,
+        configurable: true,
+      });
+    } catch {
+      /* ignore */
+    }
+    files.push(file);
+  }
+
+  if (!files.length) {
+    const err = new Error('No JPG, PNG, or WebP images found in the ZIP.');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  return indexImageFiles(files, { source: 'zip' });
 }
 
 /**
@@ -292,27 +519,39 @@ export function validateBulkPreview(
     let matchedFile = null;
     let thumbUrl = '';
     if (imageFile) {
-      if (!/\.(jpe?g|png|webp)$/i.test(imageFile)) {
+      const baseName = imageFile.replace(/\\/g, '/').split('/').pop();
+      if (!IMAGE_EXT_RE.test(baseName)) {
         errors.push({
           field: 'imageFile',
           message: 'Unsupported image type. Use JPG, PNG, or WebP.',
         });
       } else {
-        matchedFile = images.map.get(imageFile.toLowerCase()) || null;
-        if (!matchedFile) {
+        const key = baseName.toLowerCase();
+        const dup = (images.duplicates || []).find(
+          (d) => String(d.name || '').toLowerCase() === key,
+        );
+        if (dup) {
           errors.push({
             field: 'imageFile',
-            message: `Image "${imageFile}" was not selected.`,
+            message: `Duplicate filename "${baseName}" found in the image folder (${dup.count} files).`,
           });
         } else {
-          const check = validateImageFile(matchedFile);
-          if (!check.ok) {
-            errors.push({ field: 'imageFile', message: check.message });
+          matchedFile = images.map?.get(key) || null;
+          if (!matchedFile) {
+            errors.push({
+              field: 'imageFile',
+              message: `Image "${baseName}" was not found in the selected image folder.`,
+            });
           } else {
-            thumbUrl =
-              typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-                ? URL.createObjectURL(matchedFile)
-                : '';
+            const check = validateImageFile(matchedFile);
+            if (!check.ok) {
+              errors.push({ field: 'imageFile', message: check.message });
+            } else {
+              thumbUrl =
+                typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+                  ? URL.createObjectURL(matchedFile)
+                  : '';
+            }
           }
         }
       }
