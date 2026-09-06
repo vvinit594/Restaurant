@@ -307,8 +307,12 @@ export class OrdersService {
       );
     }
 
+    // Accept: atomically NEW → ACCEPTED + persist KOT once (no interactive TX / pooler issues).
+    if (next === OrderStatus.ACCEPTED) {
+      return this.acceptOrderWithKot(restaurantId, order);
+    }
+
     const data: Prisma.OrderUpdateInput = { status: next };
-    if (next === OrderStatus.ACCEPTED) data.acceptedAt = new Date();
     if (next === OrderStatus.COMPLETED) data.completedAt = new Date();
     if (next === OrderStatus.CANCELLED) data.cancelledAt = new Date();
 
@@ -323,6 +327,156 @@ export class OrdersService {
       select: { name: true },
     });
     return this.toOrderDto(updated, restaurant?.name || '');
+  }
+
+  /**
+   * Accept NEW order and assign a persistent kotNumber exactly once.
+   * Concurrent accepts: only one updateMany wins; loser receives the winner's order.
+   */
+  private async acceptOrderWithKot(
+    restaurantId: string,
+    order: {
+      id: string;
+      status: OrderStatus;
+      kotNumber: string | null;
+      items: any[];
+    },
+  ) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { name: true, address: true, city: true, phone: true },
+    });
+
+    if (order.status === OrderStatus.ACCEPTED && order.kotNumber) {
+      const fresh = await this.prisma.order.findFirst({
+        where: { id: order.id, restaurantId },
+        include: { items: true },
+      });
+      return this.toOrderDto(fresh!, restaurant?.name || '', restaurant || undefined);
+    }
+
+    const kotNumber = await this.nextKotNumber();
+    const acceptedAt = new Date();
+    const result = await this.prisma.order.updateMany({
+      where: {
+        id: order.id,
+        restaurantId,
+        status: OrderStatus.NEW,
+      },
+      data: {
+        status: OrderStatus.ACCEPTED,
+        acceptedAt,
+        kotNumber,
+      },
+    });
+
+    if (result.count === 0) {
+      const latest = await this.prisma.order.findFirst({
+        where: { id: order.id, restaurantId },
+        include: { items: true },
+      });
+      if (!latest) throw new NotFoundException('Order not found.');
+      if (
+        latest.status === OrderStatus.ACCEPTED ||
+        latest.status === OrderStatus.PREPARING ||
+        latest.status === OrderStatus.READY ||
+        latest.status === OrderStatus.SERVED ||
+        latest.status === OrderStatus.COMPLETED
+      ) {
+        // Concurrent accept — ensure kot exists for legacy rows, return same KOT.
+        if (!latest.kotNumber) {
+          await this.ensureKotNumber(restaurantId, latest.id);
+          const withKot = await this.prisma.order.findFirst({
+            where: { id: latest.id, restaurantId },
+            include: { items: true },
+          });
+          return this.toOrderDto(
+            withKot!,
+            restaurant?.name || '',
+            restaurant || undefined,
+          );
+        }
+        return this.toOrderDto(latest, restaurant?.name || '', restaurant || undefined);
+      }
+      throw new ConflictException(
+        'Order was already processed and cannot be accepted again.',
+      );
+    }
+
+    const updated = await this.prisma.order.findFirst({
+      where: { id: order.id, restaurantId },
+      include: { items: true },
+    });
+    return this.toOrderDto(updated!, restaurant?.name || '', restaurant || undefined);
+  }
+
+  /** KOT payload for download/print — only after acceptance. */
+  async getKot(restaurantId: string, orderId: string) {
+    let order = await this.prisma.order.findFirst({
+      where: { id: orderId, restaurantId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Order not found.');
+
+    if (order.status === OrderStatus.NEW) {
+      throw new BadRequestException(
+        'Accept the order before downloading the KOT.',
+      );
+    }
+    if (order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException('KOT is not available for cancelled orders.');
+    }
+
+    if (!order.kotNumber) {
+      await this.ensureKotNumber(restaurantId, order.id);
+      order = await this.prisma.order.findFirst({
+        where: { id: orderId, restaurantId },
+        include: { items: true },
+      });
+      if (!order?.kotNumber) {
+        throw new ConflictException(
+          'Order accepted but KOT could not be generated. Retry Download KOT.',
+        );
+      }
+    }
+
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { name: true },
+    });
+
+    const totalQty = order.items.reduce((sum, i) => sum + i.quantity, 0);
+    const placed = order.placedAt;
+    return {
+      kotNumber: order.kotNumber,
+      orderNumber: order.orderNumber,
+      restaurantName: restaurant?.name || '',
+      tableNumber: order.tableLabel,
+      status: order.status,
+      notes: order.notes || '',
+      placedAt: placed.toISOString(),
+      acceptedAt: order.acceptedAt?.toISOString() || null,
+      dateLabel: placed.toLocaleDateString('en-IN'),
+      timeLabel: placed.toLocaleTimeString('en-IN', {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      }),
+      items: order.items.map((i) => ({
+        quantity: i.quantity,
+        name: i.dishNameSnapshot,
+      })),
+      totalQty,
+    };
+  }
+
+  private async ensureKotNumber(restaurantId: string, orderId: string) {
+    const kotNumber = await this.nextKotNumber();
+    await this.prisma.order.updateMany({
+      where: { id: orderId, restaurantId, kotNumber: null },
+      data: { kotNumber },
+    });
   }
 
   async getOrderStats(restaurantId: string) {
@@ -409,10 +563,30 @@ export class OrdersService {
     throw new ConflictException('Could not allocate order number. Retry.');
   }
 
+  private async nextKotNumber() {
+    for (let i = 0; i < 8; i += 1) {
+      const suffix = Math.floor(1000 + Math.random() * 9000);
+      const kotNumber = `DY${suffix}${Date.now().toString().slice(-4)}`;
+      const [byKot, byOrder] = await Promise.all([
+        this.prisma.order.findUnique({
+          where: { kotNumber },
+          select: { id: true },
+        }),
+        this.prisma.order.findUnique({
+          where: { orderNumber: kotNumber },
+          select: { id: true },
+        }),
+      ]);
+      if (!byKot && !byOrder) return kotNumber;
+    }
+    throw new ConflictException('Could not allocate KOT number. Retry.');
+  }
+
   private toOrderDto(
     order: {
       id: string;
       orderNumber: string;
+      kotNumber?: string | null;
       restaurantId: string;
       tableId: string;
       tableLabel: string;
@@ -448,6 +622,7 @@ export class OrdersService {
     return {
       id: order.id,
       orderNumber: order.orderNumber,
+      kotNumber: order.kotNumber || null,
       restaurantId: order.restaurantId,
       restaurantName,
       restaurantAddress: restaurantDetails?.address || '',

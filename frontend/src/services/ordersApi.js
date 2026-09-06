@@ -66,3 +66,15 @@ export async function updateRestaurantOrderStatus(orderId, status) {
     },
   );
 }
+
+/** Fetch persistent KOT payload (only after accept). */
+export async function getRestaurantOrderKot(orderId) {
+  requirePermission(getRestaurantSessionSync(), 'manageOrders');
+  return apiRequest(
+    `/restaurants/me/orders/${encodeURIComponent(orderId)}/kot`,
+    {
+      method: 'GET',
+      headers: authHeaders(),
+    },
+  );
+}

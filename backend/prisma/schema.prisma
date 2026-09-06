@@ -255,6 +255,7 @@ model DiningTable {
 model Order {
   id             String      @id @default(cuid())
   orderNumber    String      @unique
+  kotNumber      String?     @unique
   restaurantId   String
   tableId        String
   tableLabel     String

@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Loader from '../components/Loader';
-import { getRestaurantOrder, getRestaurantOrders } from '../services/ordersApi';
+import { useToast } from '../admin/components/Toast';
+import {
+  getRestaurantOrder,
+  getRestaurantOrderKot,
+  getRestaurantOrders,
+} from '../services/ordersApi';
+import { openKotPrintWindow } from './kotPrint';
 
 function formatWhen(iso) {
   try {
@@ -11,11 +17,13 @@ function formatWhen(iso) {
 }
 
 export default function RestaurantOrderHistoryPage() {
+  const { push } = useToast();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [bill, setBill] = useState(null);
   const [billLoading, setBillLoading] = useState(false);
+  const [kotBusyId, setKotBusyId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +54,22 @@ export default function RestaurantOrderHistoryPage() {
     }
   };
 
+  const downloadKot = async (order) => {
+    if (order.status === 'CANCELLED' || order.status === 'NEW') {
+      push('KOT is only available for accepted orders.', 'error');
+      return;
+    }
+    setKotBusyId(order.id);
+    try {
+      const kot = await getRestaurantOrderKot(order.id);
+      openKotPrintWindow(kot);
+    } catch (err) {
+      push(err.message || 'Could not download KOT.', 'error');
+    } finally {
+      setKotBusyId('');
+    }
+  };
+
   const printBill = () => {
     window.print();
   };
@@ -55,7 +79,7 @@ export default function RestaurantOrderHistoryPage() {
       <div className="admin-page-header">
         <div>
           <h1>Order History</h1>
-          <p className="admin-muted">Completed and cancelled orders with bills.</p>
+          <p className="admin-muted">Completed and cancelled orders with bills and KOT reprint.</p>
         </div>
       </div>
 
@@ -78,13 +102,18 @@ export default function RestaurantOrderHistoryPage() {
               <th>Status</th>
               <th>Total</th>
               <th>When</th>
-              <th>Bill</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {orders.map((o) => (
               <tr key={o.id}>
-                <td>#{o.orderNumber}</td>
+                <td>
+                  #{o.orderNumber}
+                  {o.kotNumber ? (
+                    <div className="admin-muted">KOT #{o.kotNumber}</div>
+                  ) : null}
+                </td>
                 <td>{o.tableNumber}</td>
                 <td>{o.status}</td>
                 <td>₹{o.total}</td>
@@ -98,6 +127,19 @@ export default function RestaurantOrderHistoryPage() {
                   >
                     View bill
                   </button>
+                  {o.status !== 'CANCELLED' ? (
+                    <>
+                      {' · '}
+                      <button
+                        type="button"
+                        className="admin-link-btn"
+                        onClick={() => downloadKot(o)}
+                        disabled={kotBusyId === o.id}
+                      >
+                        {kotBusyId === o.id ? 'Opening…' : 'Download KOT'}
+                      </button>
+                    </>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -165,6 +207,16 @@ export default function RestaurantOrderHistoryPage() {
               <button type="button" className="admin-btn admin-btn-ghost" onClick={() => setBill(null)}>
                 Close
               </button>
+              {bill.status !== 'CANCELLED' && bill.status !== 'NEW' ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => downloadKot(bill)}
+                  disabled={kotBusyId === bill.id}
+                >
+                  Download KOT
+                </button>
+              ) : null}
               <button type="button" className="admin-btn admin-btn-primary" onClick={printBill}>
                 Print bill
               </button>

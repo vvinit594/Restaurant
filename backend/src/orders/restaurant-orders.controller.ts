@@ -62,6 +62,17 @@ export class RestaurantOrdersController {
     return this.orders.getOrderStats(ctx.restaurantId);
   }
 
+  @Get(':id/kot')
+  async getKot(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    const ctx = await this.restaurantContext.requireActiveMembership(user);
+    return this.orders.getKot(ctx.restaurantId, id);
+  }
+
   @Get(':id')
   async getOne(
     @CurrentUser() user: any,

@@ -951,6 +951,12 @@
   margin-bottom: 12px;
 }
 
+.order-portal-notes {
+  margin: 0 0 10px;
+  color: #fcd34d;
+  font-size: 13px;
+}
+
 .order-portal-actions {
   display: flex;
   flex-wrap: wrap;

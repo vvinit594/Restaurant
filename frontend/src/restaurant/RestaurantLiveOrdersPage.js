@@ -3,9 +3,11 @@ import Loader from '../components/Loader';
 import ConfirmDialog from '../admin/components/ConfirmDialog';
 import { useToast } from '../admin/components/Toast';
 import {
+  getRestaurantOrderKot,
   getRestaurantOrders,
   updateRestaurantOrderStatus,
 } from '../services/ordersApi';
+import { openKotPrintWindow } from './kotPrint';
 
 const NEXT = {
   NEW: 'ACCEPTED',
@@ -22,6 +24,10 @@ const NEXT_LABEL = {
   READY: 'Mark Served',
   SERVED: 'Complete',
 };
+
+function canDownloadKot(status) {
+  return ['ACCEPTED', 'PREPARING', 'READY', 'SERVED'].includes(status);
+}
 
 function formatTime(iso) {
   try {
@@ -40,6 +46,7 @@ export default function RestaurantLiveOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
+  const [kotBusyId, setKotBusyId] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const load = useCallback(async (silent = false) => {
@@ -72,11 +79,36 @@ export default function RestaurantLiveOrdersPage() {
           .map((o) => (o.id === updated.id ? updated : o))
           .filter((o) => !['COMPLETED', 'CANCELLED'].includes(o.status)),
       );
-      push(`Order #${updated.orderNumber} → ${updated.status}`);
+      if (next === 'ACCEPTED') {
+        push(
+          updated.kotNumber
+            ? `Order #${updated.orderNumber} accepted · KOT #${updated.kotNumber}`
+            : `Order #${updated.orderNumber} accepted.`,
+        );
+      } else {
+        push(`Order #${updated.orderNumber} → ${updated.status}`);
+      }
     } catch (err) {
       push(err.message || 'Status update failed.', 'error');
     } finally {
       setBusyId('');
+    }
+  };
+
+  const downloadKot = async (order) => {
+    setKotBusyId(order.id);
+    try {
+      const kot = await getRestaurantOrderKot(order.id);
+      openKotPrintWindow(kot);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id ? { ...o, kotNumber: kot.kotNumber || o.kotNumber } : o,
+        ),
+      );
+    } catch (err) {
+      push(err.message || 'Could not download KOT.', 'error');
+    } finally {
+      setKotBusyId('');
     }
   };
 
@@ -126,6 +158,9 @@ export default function RestaurantLiveOrdersPage() {
                 <div className="admin-muted">
                   Table {order.tableNumber} · {formatTime(order.placedAt || order.createdAt)}
                 </div>
+                {order.kotNumber ? (
+                  <div className="admin-muted">KOT #{order.kotNumber}</div>
+                ) : null}
               </div>
               <span className={`admin-badge ${order.status === 'NEW' ? 'admin-badge-active' : 'admin-badge-suspended'}`}>
                 {order.status}
@@ -138,6 +173,11 @@ export default function RestaurantLiveOrdersPage() {
                 </li>
               ))}
             </ul>
+            {order.notes ? (
+              <p className="order-portal-notes">
+                <strong>Note:</strong> {order.notes}
+              </p>
+            ) : null}
             <div className="order-portal-total">Total: ₹{order.total}</div>
             <div className="order-portal-actions">
               {NEXT[order.status] ? (
@@ -148,6 +188,16 @@ export default function RestaurantLiveOrdersPage() {
                   onClick={() => advance(order)}
                 >
                   {busyId === order.id ? 'Updating…' : NEXT_LABEL[order.status]}
+                </button>
+              ) : null}
+              {canDownloadKot(order.status) ? (
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  disabled={kotBusyId === order.id || busyId === order.id}
+                  onClick={() => downloadKot(order)}
+                >
+                  {kotBusyId === order.id ? 'Opening KOT…' : 'Download KOT'}
                 </button>
               ) : null}
               {order.status !== 'CANCELLED' && order.status !== 'COMPLETED' ? (
