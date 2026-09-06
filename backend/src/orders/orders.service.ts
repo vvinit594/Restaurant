@@ -279,7 +279,15 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found.');
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { name: true, address: true, city: true, phone: true },
+      select: {
+        name: true,
+        address: true,
+        city: true,
+        state: true,
+        pincode: true,
+        phone: true,
+        logoUrl: true,
+      },
     });
     return this.toOrderDto(order, restaurant?.name || '', restaurant || undefined);
   }
@@ -614,9 +622,12 @@ export class OrdersService {
     },
     restaurantName: string,
     restaurantDetails?: {
-      address?: string;
-      city?: string;
-      phone?: string;
+      address?: string | null;
+      city?: string | null;
+      state?: string | null;
+      pincode?: string | null;
+      phone?: string | null;
+      logoUrl?: string | null;
     },
   ) {
     return {
@@ -627,7 +638,10 @@ export class OrdersService {
       restaurantName,
       restaurantAddress: restaurantDetails?.address || '',
       restaurantCity: restaurantDetails?.city || '',
+      restaurantState: restaurantDetails?.state || '',
+      restaurantPincode: restaurantDetails?.pincode || '',
       restaurantPhone: restaurantDetails?.phone || '',
+      restaurantLogoUrl: restaurantDetails?.logoUrl || '',
       tableId: order.tableId,
       tableNumber: order.tableLabel,
       tableLabel: order.tableLabel,

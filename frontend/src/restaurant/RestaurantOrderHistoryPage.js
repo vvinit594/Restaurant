@@ -7,6 +7,7 @@ import {
   getRestaurantOrders,
 } from '../services/ordersApi';
 import KotModal from './KotModal';
+import { printBillDocument } from './billPrint';
 import { canViewKot } from './kotPrint';
 
 function formatWhen(iso) {
@@ -69,7 +70,12 @@ export default function RestaurantOrderHistoryPage() {
   };
 
   const printBill = () => {
-    window.print();
+    if (!bill) return;
+    try {
+      printBillDocument(bill);
+    } catch (err) {
+      push(err.message || 'Could not print bill.', 'error');
+    }
   };
 
   return (

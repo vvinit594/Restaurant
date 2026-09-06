@@ -1038,26 +1038,7 @@
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
-@media print {
-  .admin-shell aside,
-  .admin-topbar,
-  .order-checkout-actions,
-  .dish-modal-close {
-    display: none !important;
-  }
-
-  .order-cart-overlay {
-    position: static;
-    background: #fff;
-  }
-
-  .order-bill-modal {
-    box-shadow: none;
-    border: none;
-    color: #000;
-    background: #fff;
-  }
-}
+/* Bill printing uses a dedicated iframe document (billPrint.js), not @media print on this page. */
 
 /* Bulk Dishes Add */
 .bulk-dishes-card {
