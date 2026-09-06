@@ -7,7 +7,8 @@ import {
   getRestaurantOrders,
   updateRestaurantOrderStatus,
 } from '../services/ordersApi';
-import { openKotPrintWindow } from './kotPrint';
+import KotModal from './KotModal';
+import { canViewKot } from './kotPrint';
 
 const NEXT = {
   NEW: 'ACCEPTED',
@@ -24,10 +25,6 @@ const NEXT_LABEL = {
   READY: 'Mark Served',
   SERVED: 'Complete',
 };
-
-function canDownloadKot(status) {
-  return ['ACCEPTED', 'PREPARING', 'READY', 'SERVED'].includes(status);
-}
 
 function formatTime(iso) {
   try {
@@ -47,6 +44,7 @@ export default function RestaurantLiveOrdersPage() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
   const [kotBusyId, setKotBusyId] = useState('');
+  const [kot, setKot] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const load = useCallback(async (silent = false) => {
@@ -95,18 +93,18 @@ export default function RestaurantLiveOrdersPage() {
     }
   };
 
-  const downloadKot = async (order) => {
+  const viewKot = async (order) => {
     setKotBusyId(order.id);
     try {
-      const kot = await getRestaurantOrderKot(order.id);
-      openKotPrintWindow(kot);
+      const payload = await getRestaurantOrderKot(order.id);
+      setKot(payload);
       setOrders((prev) =>
         prev.map((o) =>
-          o.id === order.id ? { ...o, kotNumber: kot.kotNumber || o.kotNumber } : o,
+          o.id === order.id ? { ...o, kotNumber: payload.kotNumber || o.kotNumber } : o,
         ),
       );
     } catch (err) {
-      push(err.message || 'Could not download KOT.', 'error');
+      push(err.message || 'Could not load KOT.', 'error');
     } finally {
       setKotBusyId('');
     }
@@ -190,14 +188,14 @@ export default function RestaurantLiveOrdersPage() {
                   {busyId === order.id ? 'Updating…' : NEXT_LABEL[order.status]}
                 </button>
               ) : null}
-              {canDownloadKot(order.status) ? (
+              {canViewKot(order) ? (
                 <button
                   type="button"
                   className="admin-btn admin-btn-secondary"
                   disabled={kotBusyId === order.id || busyId === order.id}
-                  onClick={() => downloadKot(order)}
+                  onClick={() => viewKot(order)}
                 >
-                  {kotBusyId === order.id ? 'Opening KOT…' : 'Download KOT'}
+                  {kotBusyId === order.id ? 'Loading…' : 'View KOT'}
                 </button>
               ) : null}
               {order.status !== 'CANCELLED' && order.status !== 'COMPLETED' ? (
@@ -214,6 +212,8 @@ export default function RestaurantLiveOrdersPage() {
           </article>
         ))}
       </div>
+
+      {kot ? <KotModal kot={kot} onClose={() => setKot(null)} busy={Boolean(kotBusyId)} /> : null}
 
       <ConfirmDialog
         open={Boolean(cancelTarget)}

@@ -6,7 +6,8 @@ import {
   getRestaurantOrderKot,
   getRestaurantOrders,
 } from '../services/ordersApi';
-import { openKotPrintWindow } from './kotPrint';
+import KotModal from './KotModal';
+import { canViewKot } from './kotPrint';
 
 function formatWhen(iso) {
   try {
@@ -23,6 +24,7 @@ export default function RestaurantOrderHistoryPage() {
   const [error, setError] = useState('');
   const [bill, setBill] = useState(null);
   const [billLoading, setBillLoading] = useState(false);
+  const [kot, setKot] = useState(null);
   const [kotBusyId, setKotBusyId] = useState('');
 
   const load = useCallback(async () => {
@@ -54,17 +56,13 @@ export default function RestaurantOrderHistoryPage() {
     }
   };
 
-  const downloadKot = async (order) => {
-    if (order.status === 'CANCELLED' || order.status === 'NEW') {
-      push('KOT is only available for accepted orders.', 'error');
-      return;
-    }
+  const viewKot = async (order) => {
     setKotBusyId(order.id);
     try {
-      const kot = await getRestaurantOrderKot(order.id);
-      openKotPrintWindow(kot);
+      const payload = await getRestaurantOrderKot(order.id);
+      setKot(payload);
     } catch (err) {
-      push(err.message || 'Could not download KOT.', 'error');
+      push(err.message || 'Could not load KOT.', 'error');
     } finally {
       setKotBusyId('');
     }
@@ -127,16 +125,16 @@ export default function RestaurantOrderHistoryPage() {
                   >
                     View bill
                   </button>
-                  {o.status !== 'CANCELLED' ? (
+                  {canViewKot(o) ? (
                     <>
                       {' · '}
                       <button
                         type="button"
                         className="admin-link-btn"
-                        onClick={() => downloadKot(o)}
+                        onClick={() => viewKot(o)}
                         disabled={kotBusyId === o.id}
                       >
-                        {kotBusyId === o.id ? 'Opening…' : 'Download KOT'}
+                        {kotBusyId === o.id ? 'Loading…' : 'View KOT'}
                       </button>
                     </>
                   ) : null}
@@ -207,14 +205,17 @@ export default function RestaurantOrderHistoryPage() {
               <button type="button" className="admin-btn admin-btn-ghost" onClick={() => setBill(null)}>
                 Close
               </button>
-              {bill.status !== 'CANCELLED' && bill.status !== 'NEW' ? (
+              {canViewKot(bill) ? (
                 <button
                   type="button"
                   className="admin-btn admin-btn-secondary"
-                  onClick={() => downloadKot(bill)}
+                  onClick={() => {
+                    setBill(null);
+                    viewKot(bill);
+                  }}
                   disabled={kotBusyId === bill.id}
                 >
-                  Download KOT
+                  View KOT
                 </button>
               ) : null}
               <button type="button" className="admin-btn admin-btn-primary" onClick={printBill}>
@@ -224,6 +225,8 @@ export default function RestaurantOrderHistoryPage() {
           </div>
         </div>
       ) : null}
+
+      {kot ? <KotModal kot={kot} onClose={() => setKot(null)} busy={Boolean(kotBusyId)} /> : null}
     </div>
   );
 }

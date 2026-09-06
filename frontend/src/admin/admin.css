@@ -957,6 +957,68 @@
   font-size: 13px;
 }
 
+.order-kot-modal {
+  max-width: min(440px, 94vw);
+}
+
+.order-kot-preview {
+  font-family: "Courier New", Courier, monospace;
+}
+
+.order-kot-preview h3 {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.order-kot-id {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.order-kot-rule {
+  border: none;
+  border-top: 1px dashed rgba(251, 191, 36, 0.35);
+  margin: 12px 0;
+}
+
+.order-kot-table th:first-child,
+.order-kot-table td:first-child {
+  width: 56px;
+  font-weight: 700;
+}
+
+.order-kot-total {
+  text-align: center;
+  font-weight: 700;
+  margin: 8px 0;
+}
+
+.order-kot-notes {
+  margin: 10px 0;
+  color: #fcd34d;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.order-kot-rush {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 12px 0 4px;
+}
+
+@media (max-width: 560px) {
+  .order-kot-modal .order-checkout-actions {
+    flex-direction: column;
+  }
+
+  .order-kot-modal .order-checkout-actions .admin-btn {
+    width: 100%;
+  }
+}
+
 .order-portal-actions {
   display: flex;
   flex-wrap: wrap;

@@ -1,6 +1,6 @@
 /**
- * Kitchen Order Ticket — print-friendly thermal layout (HTML → browser Print / Save as PDF).
- * Matches existing bill approach (no separate PDF library).
+ * KOT helpers — preview/download/print without opening about:blank tabs.
+ * Reuses authenticated GET /orders/:id/kot JSON payload.
  */
 
 function escapeHtml(value) {
@@ -11,14 +11,20 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * @param {object} kot — payload from GET /restaurants/me/orders/:id/kot
- */
-export function openKotPrintWindow(kot) {
-  if (!kot?.kotNumber) {
-    throw new Error('KOT is not available for this order.');
-  }
+/** Whether View KOT should be shown for this order. */
+export function canViewKot(order) {
+  if (!order) return false;
+  // Backend rejects KOT for NEW and CANCELLED — match that lifecycle.
+  if (order.status === 'NEW' || order.status === 'CANCELLED') return false;
+  if (order.kotNumber) return true;
+  return ['ACCEPTED', 'PREPARING', 'READY', 'SERVED'].includes(order.status);
+}
 
+/**
+ * Build a standalone printable HTML document for the KOT.
+ * @param {object} kot
+ */
+export function buildKotDocumentHtml(kot) {
   const restaurant = String(kot.restaurantName || 'RESTAURANT').toUpperCase();
   const items = Array.isArray(kot.items) ? kot.items : [];
   const lines = items
@@ -31,12 +37,12 @@ export function openKotPrintWindow(kot) {
     .join('');
   const notes = String(kot.notes || '').trim();
   const notesBlock = notes
-    ? `<div class="rule"></div><div class="section"><strong>NOTE</strong><div class="note">${escapeHtml(
+    ? `<div class="rule"></div><div><strong>NOTE</strong><div class="note">${escapeHtml(
         notes,
       ).toUpperCase()}</div></div>`
     : '';
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -60,34 +66,15 @@ export function openKotPrintWindow(kot) {
     .meta { text-align: left; margin: 0 0 6px; }
     .meta div { margin: 2px 0; }
     .status { font-weight: 700; margin-top: 4px; }
-    .rule {
-      border-top: 1px dashed #000;
-      margin: 8px 0;
-    }
+    .rule { border-top: 1px dashed #000; margin: 8px 0; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 2px 0; vertical-align: top; }
     th { font-size: 12px; }
     .qty { width: 42px; font-weight: 700; }
-    .item { font-weight: 700; }
+    .item { font-weight: 700; word-break: break-word; }
     .total { text-align: center; font-weight: 700; margin: 6px 0; }
     .rush { text-align: center; font-weight: 700; letter-spacing: 0.08em; margin-top: 8px; }
     .note { margin-top: 4px; white-space: pre-wrap; font-weight: 700; }
-    .actions {
-      margin-top: 16px;
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-    }
-    .actions button {
-      font-family: inherit;
-      font-size: 13px;
-      padding: 8px 14px;
-      cursor: pointer;
-    }
-    @media print {
-      .actions { display: none !important; }
-      body { padding: 0; }
-    }
   </style>
 </head>
 <body>
@@ -115,31 +102,83 @@ export function openKotPrintWindow(kot) {
     ${notesBlock}
     <div class="rule"></div>
     <div class="rush">PLEASE RUSH</div>
-    <div class="actions">
-      <button type="button" onclick="window.print()">Print / Save as PDF</button>
-      <button type="button" onclick="window.close()">Close</button>
-    </div>
   </div>
-  <script>
-    window.addEventListener('load', function () {
-      setTimeout(function () { window.print(); }, 250);
-    });
-  </script>
 </body>
 </html>`;
+}
 
-  const win = window.open('', '_blank', 'noopener,noreferrer,width=420,height=720');
-  if (!win) {
-    const err = new Error('Pop-up blocked. Allow pop-ups to download/print the KOT.');
-    err.code = 'POPUP_BLOCKED';
-    throw err;
+/**
+ * Trigger a real file download (no new tab / about:blank).
+ * @param {object} kot
+ */
+export function downloadKotFile(kot) {
+  if (!kot?.kotNumber) {
+    throw new Error('KOT is not available for this order.');
   }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  try {
-    win.focus();
-  } catch {
-    /* ignore */
+  const html = buildKotDocumentHtml(kot);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `KOT-${kot.kotNumber}.html`;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+/**
+ * Print only the KOT via a hidden iframe (does not print the portal UI).
+ * @param {object} kot
+ */
+export function printKotDocument(kot) {
+  if (!kot?.kotNumber) {
+    throw new Error('KOT is not available for this order.');
   }
+  const html = buildKotDocumentHtml(kot);
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('title', `KOT ${kot.kotNumber}`);
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
+  document.body.appendChild(iframe);
+
+  const win = iframe.contentWindow;
+  const doc = iframe.contentDocument || win?.document;
+  if (!doc || !win) {
+    iframe.remove();
+    throw new Error('Could not open print preview for KOT.');
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const cleanup = () => {
+    window.setTimeout(() => {
+      try {
+        iframe.remove();
+      } catch {
+        /* ignore */
+      }
+    }, 500);
+  };
+
+  const trigger = () => {
+    try {
+      win.focus();
+      win.print();
+    } finally {
+      cleanup();
+    }
+  };
+
+  // Allow layout to settle before print.
+  window.setTimeout(trigger, 200);
 }
