@@ -1,57 +1,60 @@
 import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
+import {
+  LEGACY_PLAN_CODES,
+  SUBSCRIPTION_PLANS,
+} from '../src/common/subscription-plans';
 
 dotenv.config();
 
 const prisma = new PrismaClient();
 
-const PLANS = [
-  {
-    code: 'FREE',
-    name: 'Free',
-    priceLabel: '₹0/mo',
-    sortOrder: 1,
-    features: ['1 branch', '50 dishes', '5 QR tables'],
-  },
-  {
-    code: 'STARTER',
-    name: 'Starter',
-    priceLabel: '₹999/mo',
-    sortOrder: 2,
-    features: ['2 branches', '200 dishes', '25 QR tables'],
-  },
-  {
-    code: 'PROFESSIONAL',
-    name: 'Professional',
-    priceLabel: '₹2,499/mo',
-    sortOrder: 3,
-    features: ['5 branches', 'Unlimited dishes', '100 QR tables', 'Analytics'],
-  },
-  {
-    code: 'ENTERPRISE',
-    name: 'Enterprise',
-    priceLabel: 'Custom',
-    sortOrder: 4,
-    features: ['Unlimited branches', 'SLA', 'Custom QR domains', 'Priority support'],
-  },
-];
-
 async function seedPlans() {
-  for (const plan of PLANS) {
+  for (const plan of Object.values(SUBSCRIPTION_PLANS)) {
     await prisma.subscriptionPlan.upsert({
       where: { code: plan.code },
-      create: plan,
+      create: {
+        code: plan.code,
+        name: plan.name,
+        priceLabel: plan.priceLabel,
+        priceAmount: plan.priceAmount,
+        billingMonths: plan.billingMonths,
+        branchLimit: plan.branchLimit,
+        badge: plan.badge,
+        description: plan.description,
+        specialNotice: plan.specialNotice,
+        isNewRestaurantOnly: plan.isNewRestaurantOnly,
+        features: [...plan.features],
+        sortOrder: plan.sortOrder,
+        isActive: true,
+      },
       update: {
         name: plan.name,
         priceLabel: plan.priceLabel,
-        features: plan.features,
+        priceAmount: plan.priceAmount,
+        billingMonths: plan.billingMonths,
+        branchLimit: plan.branchLimit,
+        badge: plan.badge,
+        description: plan.description,
+        specialNotice: plan.specialNotice,
+        isNewRestaurantOnly: plan.isNewRestaurantOnly,
+        features: [...plan.features],
         sortOrder: plan.sortOrder,
         isActive: true,
       },
     });
   }
-  console.log(`Subscription plans upserted: ${PLANS.map((p) => p.code).join(', ')}`);
+
+  // Preserve historical plans; hide from new subscription selection.
+  await prisma.subscriptionPlan.updateMany({
+    where: { code: { in: [...LEGACY_PLAN_CODES] } },
+    data: { isActive: false },
+  });
+
+  console.log(
+    `Subscription plans upserted: ${Object.keys(SUBSCRIPTION_PLANS).join(', ')} (legacy deactivated)`,
+  );
 }
 
 async function seedSuperAdmin() {

@@ -259,6 +259,17 @@ export default function RestaurantDetailPage() {
               <div><dt>Email</dt><dd>{restaurant.email}</dd></div>
               <div><dt>Status</dt><dd><StatusBadge status={restaurant.status} /></dd></div>
               <div><dt>Subscription</dt><dd>{restaurant.subscriptionPlan?.name} ({restaurant.subscriptionPlan?.priceLabel})</dd></div>
+              {restaurant.subscription?.startedAt ? (
+                <div>
+                  <dt>Subscription period</dt>
+                  <dd>
+                    {new Date(restaurant.subscription.startedAt).toLocaleDateString()}
+                    {restaurant.subscription.endsAt
+                      ? ` → ${new Date(restaurant.subscription.endsAt).toLocaleDateString()}`
+                      : ''}
+                  </dd>
+                </div>
+              ) : null}
               <div><dt>Description</dt><dd>{restaurant.description || '—'}</dd></div>
             </dl>
           </section>

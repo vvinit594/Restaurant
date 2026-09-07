@@ -14,6 +14,11 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { auditLog } from '../../common/audit-log';
+import {
+  ACTIVE_PLAN_CODES,
+  addMonths,
+  getPlanConfig,
+} from '../../common/subscription-plans';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QrService } from '../../qr/qr.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
@@ -211,12 +216,26 @@ export class AdminRestaurantsService {
       throw new ConflictException('An account with this email already exists.');
     }
 
+    if (!ACTIVE_PLAN_CODES.includes(planCode as (typeof ACTIVE_PLAN_CODES)[number])) {
+      throw new BadRequestException(
+        'Selected subscription plan is not available for new restaurants. Choose Monthly or Launch.',
+      );
+    }
+
     const plan = await this.prisma.subscriptionPlan.findFirst({
       where: { code: planCode, isActive: true },
     });
     if (!plan) {
       throw new BadRequestException('Selected subscription plan was not found.');
     }
+
+    // Launch Plan is for new restaurants only (create = always eligible).
+    await this.assertLaunchEligibility(plan.code, { isNewRestaurant: true });
+
+    const planConfig = getPlanConfig(plan.code);
+    const billingMonths = plan.billingMonths || planConfig?.billingMonths || 1;
+    const startedAt = new Date();
+    const endsAt = addMonths(startedAt, billingMonths);
 
     const passwordHash = await bcrypt.hash(password, 12);
     const coverImageUrl =
@@ -269,8 +288,17 @@ export class AdminRestaurantsService {
             restaurantId: restaurant.id,
             planId: plan.id,
             status: 'ACTIVE',
+            startedAt,
+            endsAt,
           },
         });
+
+        const branchLimit = plan.branchLimit || planConfig?.branchLimit || 5;
+        if (branchLimit < 1) {
+          throw new BadRequestException(
+            'This subscription plan does not allow any branches.',
+          );
+        }
 
         await tx.branch.create({
           data: {
@@ -374,6 +402,15 @@ export class AdminRestaurantsService {
       subscription: {
         id: created.subscription.id,
         planCode: created.planCode,
+        startedAt: created.subscription.startedAt?.toISOString?.()
+          ? created.subscription.startedAt.toISOString()
+          : created.subscription.startedAt,
+        endsAt: created.subscription.endsAt?.toISOString?.()
+          ? created.subscription.endsAt.toISOString()
+          : created.subscription.endsAt || null,
+        priceAmount: Number(plan.priceAmount),
+        billingMonths: plan.billingMonths,
+        branchLimit: plan.branchLimit,
       },
       leadId: pendingLead?.id || null,
     };
@@ -644,13 +681,64 @@ export class AdminRestaurantsService {
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     });
-    return plans.map((p) => ({
-      id: p.code.toLowerCase(),
-      code: p.code,
-      name: p.name,
-      priceLabel: p.priceLabel,
-      features: Array.isArray(p.features) ? p.features : [],
-    }));
+    return plans.map((p) => {
+      const config = getPlanConfig(p.code);
+      return {
+        id: p.code.toLowerCase(),
+        code: p.code,
+        name: p.name,
+        priceLabel: p.priceLabel,
+        priceAmount: Number(p.priceAmount),
+        billingMonths: p.billingMonths,
+        branchLimit: p.branchLimit,
+        badge: p.badge || config?.badge || null,
+        description: p.description || config?.description || null,
+        specialNotice: p.specialNotice || config?.specialNotice || null,
+        isNewRestaurantOnly: p.isNewRestaurantOnly,
+        ctaLabel: config?.ctaLabel || `Choose ${p.name}`,
+        theme: config?.theme || 'orange',
+        features: Array.isArray(p.features) ? p.features : [],
+      };
+    });
+  }
+
+  /**
+   * Enforce branch limit from the restaurant's active subscription plan.
+   * Call before creating additional branches.
+   */
+  async assertBranchLimit(restaurantId: string) {
+    const sub = await this.prisma.subscription.findFirst({
+      where: { restaurantId, status: 'ACTIVE' },
+      include: { plan: true },
+      orderBy: { startedAt: 'desc' },
+    });
+    const limit = sub?.plan?.branchLimit ?? 5;
+    const count = await this.prisma.branch.count({ where: { restaurantId } });
+    if (count >= limit) {
+      throw new BadRequestException(
+        `Branch limit reached (${limit}). Upgrade or remove a branch to add another.`,
+      );
+    }
+  }
+
+  /**
+   * Launch Plan may only be assigned when onboarding a new restaurant.
+   * Existing restaurants cannot switch to / request Launch via API.
+   */
+  async assertLaunchEligibility(
+    planCode: string,
+    opts: { isNewRestaurant: boolean },
+  ) {
+    const config = getPlanConfig(planCode);
+    const plan = await this.prisma.subscriptionPlan.findFirst({
+      where: { code: this.normalizePlanCode(planCode) },
+    });
+    const newOnly = plan?.isNewRestaurantOnly ?? config?.isNewRestaurantOnly;
+    if (newOnly && !opts.isNewRestaurant) {
+      throw new BadRequestException(
+        'Launch Plan is only available for new restaurants.',
+      );
+    }
   }
 
   private normalizePlanCode(raw: string) {
@@ -682,7 +770,17 @@ export class AdminRestaurantsService {
       user: { name: string; email: string };
     } | null;
     subscriptions: Array<{
-      plan: { code: string; name: string; priceLabel: string };
+      status?: string;
+      startedAt?: Date;
+      endsAt?: Date | null;
+      plan: {
+        code: string;
+        name: string;
+        priceLabel: string;
+        priceAmount?: unknown;
+        billingMonths?: number;
+        branchLimit?: number;
+      };
     }>;
     memberships: Array<{
       user: {
@@ -696,6 +794,7 @@ export class AdminRestaurantsService {
     }>;
   }) {
     const plan = r.subscriptions[0]?.plan;
+    const sub = r.subscriptions[0];
     const owner = r.memberships[0]?.user;
     return {
       id: r.id,
@@ -727,6 +826,17 @@ export class AdminRestaurantsService {
             id: plan.code.toLowerCase(),
             name: plan.name,
             priceLabel: plan.priceLabel,
+            priceAmount:
+              plan.priceAmount != null ? Number(plan.priceAmount) : undefined,
+            billingMonths: plan.billingMonths,
+            branchLimit: plan.branchLimit,
+          }
+        : null,
+      subscription: sub
+        ? {
+            status: sub.status || null,
+            startedAt: sub.startedAt?.toISOString?.() || null,
+            endsAt: sub.endsAt?.toISOString?.() || null,
           }
         : null,
       admin: owner

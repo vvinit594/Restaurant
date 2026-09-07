@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
+import SubscriptionPlanCards from '../components/SubscriptionPlanCards';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { createRestaurant, getSubscriptionPlans } from '../services/restaurantsApi';
@@ -24,7 +25,7 @@ const INITIAL = {
   adminPhone: '',
   adminPassword: '',
   confirmPassword: '',
-  subscriptionPlanId: 'free',
+  subscriptionPlanId: 'monthly',
 };
 
 export default function AddRestaurantPage() {
@@ -284,31 +285,16 @@ export default function AddRestaurantPage() {
 
         <section className="admin-form-section">
           <h2>Subscription</h2>
-          <div className="admin-plan-grid">
-            {plans.map((plan) => (
-              <label
-                key={plan.id}
-                className={`admin-plan-card ${form.subscriptionPlanId === plan.id ? 'selected' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name="plan"
-                  checked={form.subscriptionPlanId === plan.id}
-                  onChange={() => setField('subscriptionPlanId', plan.id)}
-                />
-                <strong>{plan.name}</strong>
-                <span>{plan.priceLabel}</span>
-                <ul>
-                  {plan.features.map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
-              </label>
-            ))}
-          </div>
+          <SubscriptionPlanCards
+            plans={plans}
+            selectedId={form.subscriptionPlanId}
+            onSelect={(id) => setField('subscriptionPlanId', id)}
+            disabled={submitting}
+          />
           {selectedPlan ? (
             <p className="admin-muted admin-mt">
-              Selected: {selectedPlan.name} — QR path will be `/r/{'{slug}'}/t/{'{qrToken}'}`
+              Selected: {selectedPlan.name} ({selectedPlan.priceLabel}) — QR path will be
+              `/r/{'{slug}'}/t/{'{qrToken}'}`
             </p>
           ) : null}
         </section>

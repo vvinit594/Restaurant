@@ -691,6 +691,227 @@
   font-weight: 500;
 }
 
+/* New Monthly / Launch subscription cards */
+.admin-sub-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .admin-sub-plan-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-sub-plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 22px 18px 16px;
+  border-radius: 16px;
+  border: 1.5px solid var(--admin-border);
+  background: var(--admin-panel-2);
+  color: var(--admin-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  font: inherit;
+}
+
+.admin-sub-plan-card:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.admin-sub-plan-card:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.admin-sub-plan-card.theme-orange {
+  --plan-accent: #ea580c;
+  --plan-accent-soft: rgba(234, 88, 12, 0.16);
+  --plan-accent-border: rgba(234, 88, 12, 0.55);
+}
+
+.admin-sub-plan-card.theme-blue {
+  --plan-accent: #2563eb;
+  --plan-accent-soft: rgba(37, 99, 235, 0.16);
+  --plan-accent-border: rgba(37, 99, 235, 0.55);
+}
+
+.admin-sub-plan-card.selected {
+  border-color: var(--plan-accent);
+  box-shadow: 0 0 0 1px var(--plan-accent), 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.admin-sub-plan-badge {
+  align-self: center;
+  margin-top: -6px;
+  margin-bottom: 2px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--plan-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-sub-plan-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  background: var(--plan-accent-soft);
+}
+
+.admin-sub-plan-glyph {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--plan-accent);
+  border-radius: 3px;
+}
+
+.admin-sub-plan-glyph.glyph-orange {
+  border-radius: 3px;
+  background:
+    linear-gradient(var(--plan-accent), var(--plan-accent)) center 4px / 10px 2px no-repeat,
+    transparent;
+  position: relative;
+}
+
+.admin-sub-plan-glyph.glyph-orange::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 7px;
+  bottom: 3px;
+  border-top: 2px solid var(--plan-accent);
+  opacity: 0.85;
+}
+
+.admin-sub-plan-glyph.glyph-blue {
+  width: 0;
+  height: 0;
+  border: none;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 16px solid var(--plan-accent);
+  border-radius: 0;
+  background: none;
+}
+
+.admin-sub-plan-name {
+  margin: 0;
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.admin-sub-plan-desc {
+  margin: 0;
+  text-align: center;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.admin-sub-plan-price {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.admin-sub-plan-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--plan-accent-soft);
+  border: 1px solid var(--plan-accent-border);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.admin-sub-plan-features {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-sub-plan-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--admin-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.admin-sub-plan-check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--plan-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.admin-sub-plan-branch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--plan-accent-soft);
+  border: 1px solid var(--plan-accent-border);
+  font-size: 12px;
+}
+
+.admin-sub-plan-branch span {
+  color: var(--admin-muted);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.admin-sub-plan-branch strong {
+  color: var(--plan-accent);
+  font-weight: 800;
+}
+
+.admin-sub-plan-cta {
+  display: block;
+  margin-top: 4px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--plan-accent);
+  color: #fff;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .admin-alert {
   border-radius: 10px;
   padding: 10px 12px;

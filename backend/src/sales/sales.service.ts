@@ -228,13 +228,20 @@ export class SalesService {
     const monthlyRevenue = nonArchived
       .filter((r) => r.createdAt >= monthStart || r.subscriptions[0])
       .reduce((sum, r) => {
-        const label = r.subscriptions[0]?.plan?.priceLabel;
-        return sum + parseMonthlyPriceLabel(label);
+        const plan = r.subscriptions[0]?.plan;
+        return (
+          sum +
+          parseMonthlyPriceLabel(plan?.priceLabel, plan?.priceAmount)
+        );
       }, 0);
 
     // Monthly revenue attributed to active subscriptions of this SP's restaurants
     const subscriptionRevenue = nonArchived.reduce((sum, r) => {
-      return sum + parseMonthlyPriceLabel(r.subscriptions[0]?.plan?.priceLabel);
+      const plan = r.subscriptions[0]?.plan;
+      return (
+        sum +
+        parseMonthlyPriceLabel(plan?.priceLabel, plan?.priceAmount)
+      );
     }, 0);
 
     const commissions = await this.prisma.commission.findMany({
@@ -306,7 +313,10 @@ export class SalesService {
       const plan = r.subscriptions[0]?.plan;
       const key = plan?.name || plan?.code || 'None';
       planBreakdown[key] = (planBreakdown[key] || 0) + 1;
-      subscriptionRevenue += parseMonthlyPriceLabel(plan?.priceLabel);
+      subscriptionRevenue += parseMonthlyPriceLabel(
+        plan?.priceLabel,
+        plan?.priceAmount,
+      );
     }
 
     const avgRevenue =
@@ -323,21 +333,34 @@ export class SalesService {
     const monthlyBuckets: Record<string, number> = {};
     for (const r of nonArchived) {
       const key = `${r.createdAt.getFullYear()}-${String(r.createdAt.getMonth() + 1).padStart(2, '0')}`;
-      const price = parseMonthlyPriceLabel(r.subscriptions[0]?.plan?.priceLabel);
+      const plan = r.subscriptions[0]?.plan;
+      const price = parseMonthlyPriceLabel(
+        plan?.priceLabel,
+        plan?.priceAmount,
+      );
       monthlyBuckets[key] = (monthlyBuckets[key] || 0) + price;
     }
 
     const subscriptionRows = nonArchived.map((r) => {
       const sub = r.subscriptions[0];
+      const plan = sub?.plan;
       return {
         restaurantId: r.id,
         restaurantName: r.name,
-        planCode: sub?.plan?.code || null,
-        planName: sub?.plan?.name || null,
-        priceLabel: sub?.plan?.priceLabel || null,
-        monthlyAmount: parseMonthlyPriceLabel(sub?.plan?.priceLabel),
+        planCode: plan?.code || null,
+        planName: plan?.name || null,
+        priceLabel: plan?.priceLabel || null,
+        priceAmount:
+          plan?.priceAmount != null ? Number(plan.priceAmount) : null,
+        billingMonths: plan?.billingMonths ?? null,
+        branchLimit: plan?.branchLimit ?? null,
+        monthlyAmount: parseMonthlyPriceLabel(
+          plan?.priceLabel,
+          plan?.priceAmount,
+        ),
         status: sub?.status || null,
         startedAt: sub?.startedAt?.toISOString() || null,
+        endsAt: sub?.endsAt?.toISOString() || null,
         restaurantStatus: r.status,
         addedAt: r.createdAt.toISOString(),
       };
@@ -885,7 +908,15 @@ export class SalesService {
     subscriptions: Array<{
       status: string;
       startedAt: Date;
-      plan: { code: string; name: string; priceLabel: string };
+      endsAt?: Date | null;
+      plan: {
+        code: string;
+        name: string;
+        priceLabel: string;
+        priceAmount?: unknown;
+        billingMonths?: number;
+        branchLimit?: number;
+      };
     }>;
     qrCodes: Array<{
       id: string;
@@ -913,9 +944,17 @@ export class SalesService {
             planCode: plan.code,
             planName: plan.name,
             priceLabel: plan.priceLabel,
+            priceAmount:
+              plan.priceAmount != null ? Number(plan.priceAmount) : null,
+            billingMonths: plan.billingMonths ?? null,
+            branchLimit: plan.branchLimit ?? null,
             status: r.subscriptions[0]?.status || null,
             startedAt: r.subscriptions[0]?.startedAt?.toISOString() || null,
-            monthlyAmount: parseMonthlyPriceLabel(plan.priceLabel),
+            endsAt: r.subscriptions[0]?.endsAt?.toISOString() || null,
+            monthlyAmount: parseMonthlyPriceLabel(
+              plan.priceLabel,
+              plan.priceAmount as { toString(): string } | null | undefined,
+            ),
           }
         : null,
       qr: qr ? this.qrService.toPublicQr(qr, r.slug) : null,

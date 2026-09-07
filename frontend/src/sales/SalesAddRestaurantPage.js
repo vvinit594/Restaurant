@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
+import SubscriptionPlanCards from '../components/SubscriptionPlanCards';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { slugify } from '../services/adminStorage';
@@ -24,7 +25,7 @@ const INITIAL = {
   adminPhone: '',
   adminPassword: '',
   confirmPassword: '',
-  subscriptionPlanId: 'free',
+  subscriptionPlanId: 'monthly',
 };
 
 export default function SalesAddRestaurantPage() {
@@ -210,26 +211,13 @@ export default function SalesAddRestaurantPage() {
           ))}
         </div>
 
-        <h2>Subscription plan</h2>
-        <div className="admin-plan-grid">
-          {(plans.length ? plans : [{ id: 'free', name: 'Free', priceLabel: '₹0/mo' }]).map(
-            (plan) => (
-              <label key={plan.id || plan.code} className="admin-plan-card">
-                <input
-                  type="radio"
-                  name="plan"
-                  checked={form.subscriptionPlanId === (plan.id || plan.code?.toLowerCase())}
-                  onChange={() =>
-                    setField('subscriptionPlanId', plan.id || plan.code?.toLowerCase())
-                  }
-                  disabled={submitting}
-                />
-                <strong>{plan.name}</strong>
-                <span>{plan.priceLabel}</span>
-              </label>
-            ),
-          )}
-        </div>
+        <h2>Subscription</h2>
+        <SubscriptionPlanCards
+          plans={plans}
+          selectedId={form.subscriptionPlanId}
+          onSelect={(id) => setField('subscriptionPlanId', id)}
+          disabled={submitting}
+        />
 
         <div className="order-checkout-actions">
           <button

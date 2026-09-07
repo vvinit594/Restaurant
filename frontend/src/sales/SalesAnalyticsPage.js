@@ -140,6 +140,7 @@ export default function SalesAnalyticsPage() {
                       <th>Price</th>
                       <th>Status</th>
                       <th>Started</th>
+                      <th>Ends</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -151,6 +152,9 @@ export default function SalesAnalyticsPage() {
                         <td>{s.status || '—'}</td>
                         <td>
                           {s.startedAt ? new Date(s.startedAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td>
+                          {s.endsAt ? new Date(s.endsAt).toLocaleDateString() : '—'}
                         </td>
                       </tr>
                     ))}

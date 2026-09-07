@@ -1,8 +1,15 @@
 /**
- * Parse display price labels like "₹999/mo" or "₹2,499/mo" into a monthly rupee amount.
+ * Prefer trusted numeric priceAmount; fall back to parsing display labels.
  * Returns 0 for Custom / unparseable labels (no invented revenue).
  */
-export function parseMonthlyPriceLabel(priceLabel: string | null | undefined): number {
+export function parseMonthlyPriceLabel(
+  priceLabel: string | null | undefined,
+  priceAmount?: number | string | { toString(): string } | null,
+): number {
+  if (priceAmount != null && priceAmount !== '') {
+    const n = Number(priceAmount);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
   const raw = String(priceLabel || '');
   if (!raw || /custom/i.test(raw)) return 0;
   const digits = raw.replace(/[^0-9.]/g, '');

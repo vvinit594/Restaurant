@@ -58,7 +58,7 @@ export async function createRestaurant(payload) {
     payload.subscriptionPlan ||
     payload.subscription?.plan ||
     payload.subscriptionPlanId ||
-    'free';
+    'monthly';
 
   const body = {
     restaurant: {
