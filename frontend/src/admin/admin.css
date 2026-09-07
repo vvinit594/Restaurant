@@ -1238,3 +1238,151 @@
   display: grid;
   gap: 14px;
 }
+
+/* Sales Person panel */
+.sales-sidebar-user {
+  padding: 4px 16px 14px;
+  display: grid;
+  gap: 2px;
+}
+.sales-sidebar-user strong {
+  color: #fff;
+  font-size: 0.95rem;
+}
+.sales-code {
+  color: #fb923c;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.sales-sidebar-footer {
+  margin-top: auto;
+  padding: 12px 8px 16px;
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.sales-logout-link {
+  color: #f87171 !important;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.sales-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sales-metric-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+.sales-metric-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a8a29e;
+}
+.sales-metric-value {
+  font-size: 1.6rem;
+  color: #fff;
+}
+.sales-metric-accent .sales-metric-value {
+  color: #fb923c;
+}
+.sales-secondary-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin-bottom: 18px;
+  color: #a8a29e;
+  font-size: 13px;
+}
+.sales-dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.sales-panel-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 18px;
+}
+.sales-panel-card h2,
+.sales-panel-card h3 {
+  margin: 0 0 6px;
+}
+.sales-week-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  min-height: 160px;
+  margin-top: 16px;
+}
+.sales-week-bar-wrap {
+  flex: 1;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  height: 160px;
+  align-content: end;
+}
+.sales-week-bar {
+  width: 100%;
+  max-width: 28px;
+  background: linear-gradient(180deg, #fb923c, #ea580c);
+  border-radius: 6px 6px 2px 2px;
+  min-height: 6px;
+}
+.sales-week-bar-wrap span,
+.sales-week-bar-wrap em {
+  font-size: 11px;
+  color: #a8a29e;
+  font-style: normal;
+}
+.sales-commission-hero {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fb923c;
+  margin: 12px 0 4px;
+}
+.sales-chart-empty {
+  margin-top: 20px;
+}
+.sales-qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.sales-range-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sales-plan-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sales-plan-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+@media (max-width: 900px) {
+  .sales-dash-grid {
+    grid-template-columns: 1fr;
+  }
+}

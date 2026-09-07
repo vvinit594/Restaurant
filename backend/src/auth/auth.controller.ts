@@ -26,9 +26,22 @@ export class AuthController {
     return this.authService.restaurantLogin(dto.email, dto.password);
   }
 
+  @Post('sales/login')
+  @UseGuards(AuthRateLimitGuard)
+  salesLogin(@Body() dto: AdminLoginDto) {
+    return this.authService.salesLogin(dto.email, dto.password);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  me(@CurrentUser() user: SafeUser & { restaurantId?: string }) {
+  me(
+    @CurrentUser()
+    user: SafeUser & {
+      restaurantId?: string;
+      salesPersonId?: string;
+      salesCode?: string;
+    },
+  ) {
     return this.authService.getMe(user);
   }
 

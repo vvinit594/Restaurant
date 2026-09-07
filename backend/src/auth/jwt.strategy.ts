@@ -10,6 +10,8 @@ export type JwtPayload = {
   role: string;
   restaurantId?: string;
   membershipRole?: string;
+  salesPersonId?: string;
+  salesCode?: string;
 };
 
 @Injectable()
@@ -40,6 +42,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ...this.usersService.toSafeUser(user),
       restaurantId: payload.restaurantId,
       membershipRole: payload.membershipRole,
+      salesPersonId: payload.salesPersonId,
+      salesCode: payload.salesCode,
     };
   }
 }

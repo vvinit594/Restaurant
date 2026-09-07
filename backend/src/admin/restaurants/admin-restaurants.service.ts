@@ -19,6 +19,13 @@ import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 
 const OWNER_INCLUDE = {
+  salesPerson: {
+    select: {
+      id: true,
+      salesCode: true,
+      user: { select: { name: true, email: true } },
+    },
+  },
   subscriptions: {
     where: { status: 'ACTIVE' as const },
     take: 1,
@@ -82,6 +89,13 @@ export class AdminRestaurantsService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
+        salesPerson: {
+          select: {
+            id: true,
+            salesCode: true,
+            user: { select: { name: true, email: true } },
+          },
+        },
         subscriptions: {
           where: { status: 'ACTIVE' },
           take: 1,
@@ -112,6 +126,7 @@ export class AdminRestaurantsService {
   async create(
     dto: CreateRestaurantDto,
     adminUser: { id: string; email?: string },
+    options?: { salesPersonId?: string },
   ) {
     const restaurantInput = dto.restaurant;
     const ownerInput = dto.admin || dto.owner;
@@ -184,6 +199,7 @@ export class AdminRestaurantsService {
             pincode: restaurantInput.pincode?.trim() || null,
             status: RestaurantStatus.ACTIVE,
             createdByUserId: adminUser.id,
+            salesPersonId: options?.salesPersonId || null,
           },
         });
 
@@ -207,7 +223,7 @@ export class AdminRestaurantsService {
           },
         });
 
-        await tx.subscription.create({
+        const subscription = await tx.subscription.create({
           data: {
             restaurantId: restaurant.id,
             planId: plan.id,
@@ -258,7 +274,7 @@ export class AdminRestaurantsService {
 
         const qr = await this.qrService.createPrimaryInTransaction(tx, restaurant);
 
-        return { restaurant, owner, qr };
+        return { restaurant, owner, qr, subscription, planCode: plan.code };
       },
       { maxWait: 10_000, timeout: 30_000 },
     );
@@ -271,6 +287,7 @@ export class AdminRestaurantsService {
       ownerUserId: created.owner.id,
       qrId: created.qr.id,
       qrToken: created.qr.token,
+      salesPersonId: options?.salesPersonId || null,
     });
 
     return {
@@ -281,6 +298,7 @@ export class AdminRestaurantsService {
         slug: created.restaurant.slug,
         status: created.restaurant.status,
         createdByUserId: created.restaurant.createdByUserId,
+        salesPersonId: created.restaurant.salesPersonId || null,
       },
       owner: {
         id: created.owner.id,
@@ -289,6 +307,10 @@ export class AdminRestaurantsService {
         role: created.owner.role,
       },
       qr: this.qrService.toPublicQr(created.qr),
+      subscription: {
+        id: created.subscription.id,
+        planCode: created.planCode,
+      },
     };
   }
 
@@ -589,6 +611,11 @@ export class AdminRestaurantsService {
     status: RestaurantStatus;
     createdAt: Date;
     updatedAt: Date;
+    salesPerson?: {
+      id: string;
+      salesCode: string;
+      user: { name: string; email: string };
+    } | null;
     subscriptions: Array<{
       plan: { code: string; name: string; priceLabel: string };
     }>;
@@ -621,6 +648,14 @@ export class AdminRestaurantsService {
       status: r.status.toLowerCase(),
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
+      salesPerson: r.salesPerson
+        ? {
+            id: r.salesPerson.id,
+            salesCode: r.salesPerson.salesCode,
+            name: r.salesPerson.user.name,
+            email: r.salesPerson.user.email,
+          }
+        : null,
       subscriptionPlanId: plan?.code.toLowerCase() || null,
       subscriptionPlan: plan
         ? {

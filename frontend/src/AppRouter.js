@@ -28,12 +28,25 @@ import RestaurantLiveOrdersPage from './restaurant/RestaurantLiveOrdersPage';
 import RestaurantOrderHistoryPage from './restaurant/RestaurantOrderHistoryPage';
 import PublicRestaurantPage from './pages/PublicRestaurantPage';
 import RestaurantsListingPage from './pages/RestaurantsListingPage';
+import { SalesAuthProvider } from './sales/auth/SalesAuthContext';
+import ProtectedSalesRoute from './sales/auth/ProtectedSalesRoute';
+import SalesLogin from './sales/SalesLogin';
+import SalesLayout from './sales/SalesLayout';
+import SalesDashboardPage from './sales/SalesDashboardPage';
+import SalesAddRestaurantPage from './sales/SalesAddRestaurantPage';
+import SalesMyRestaurantsPage from './sales/SalesMyRestaurantsPage';
+import SalesLeadsPage from './sales/SalesLeadsPage';
+import SalesQrManagementPage from './sales/SalesQrManagementPage';
+import SalesAnalyticsPage from './sales/SalesAnalyticsPage';
+import SalesCommissionPage from './sales/SalesCommissionPage';
+import SalesProfilePage from './sales/SalesProfilePage';
 
 export default function AppRouter() {
   return (
     <BrowserRouter>
       <AdminAuthProvider>
         <RestaurantAuthProvider>
+          <SalesAuthProvider>
           <ToastProvider>
             <Routes>
               <Route path="/" element={<CustomerApp />} />
@@ -208,9 +221,30 @@ export default function AppRouter() {
               <Route path="/r/:restaurantSlug" element={<PublicRestaurantPage />} />
               <Route path="/restaurant/:restaurantSlug" element={<PublicRestaurantPage />} />
 
+              <Route path="/sales-login" element={<SalesLogin />} />
+              <Route
+                path="/sales"
+                element={
+                  <ProtectedSalesRoute>
+                    <SalesLayout />
+                  </ProtectedSalesRoute>
+                }
+              >
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<SalesDashboardPage />} />
+                <Route path="restaurants/add" element={<SalesAddRestaurantPage />} />
+                <Route path="restaurants" element={<SalesMyRestaurantsPage />} />
+                <Route path="leads" element={<SalesLeadsPage />} />
+                <Route path="qr-management" element={<SalesQrManagementPage />} />
+                <Route path="analytics" element={<SalesAnalyticsPage />} />
+                <Route path="commission" element={<SalesCommissionPage />} />
+                <Route path="profile" element={<SalesProfilePage />} />
+              </Route>
+
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ToastProvider>
+          </SalesAuthProvider>
         </RestaurantAuthProvider>
       </AdminAuthProvider>
     </BrowserRouter>

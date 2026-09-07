@@ -5,6 +5,7 @@
 import { getAdminSessionSync } from './adminAuth';
 import { apiRequest } from './apiClient';
 import { getRestaurantSessionSync } from './restaurantAuth';
+import { getSalesSessionSync } from './salesAuth';
 
 export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/*,.jpg,.jpeg,.png,.webp';
 export const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
@@ -47,7 +48,8 @@ function authHeaders(options = {}) {
   const token =
     options.token ||
     getAdminSessionSync()?.token ||
-    getRestaurantSessionSync()?.token;
+    getRestaurantSessionSync()?.token ||
+    getSalesSessionSync()?.token;
   if (!token) {
     const err = new Error('Please sign in to upload images.');
     err.code = 'UNAUTHORIZED';

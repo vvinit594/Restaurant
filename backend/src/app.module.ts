@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PublicRestaurantsModule } from './public/restaurants/public-restaurants.module';
 import { QrModule } from './qr/qr.module';
 import { RestaurantDishesModule } from './restaurants/dishes/restaurant-dishes.module';
+import { SalesModule } from './sales/sales.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -25,6 +26,7 @@ import { UsersModule } from './users/users.module';
     QrModule,
     MediaModule,
     OrdersModule,
+    SalesModule,
   ],
 })
 export class AppModule {}

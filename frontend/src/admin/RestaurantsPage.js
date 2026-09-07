@@ -140,6 +140,7 @@ export default function RestaurantsPage() {
               <th>Restaurant Name</th>
               <th>Location</th>
               <th>Owner / Admin</th>
+              <th>Sales Person</th>
               <th>Subscription</th>
               <th>Status</th>
               <th>Created</th>
@@ -149,13 +150,13 @@ export default function RestaurantsPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <Loader variant="inline" label="Loading restaurants…" />
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <div className="admin-empty admin-empty-inline">
                     <h3>No restaurants found</h3>
                     <p>Create the first restaurant to start onboarding.</p>
@@ -179,6 +180,12 @@ export default function RestaurantsPage() {
                   <td>
                     {r.admin?.name || '—'}
                     <div className="admin-cell-sub">{r.admin?.email}</div>
+                  </td>
+                  <td>
+                    {r.salesPerson?.salesCode || '—'}
+                    {r.salesPerson?.name ? (
+                      <div className="admin-cell-sub">{r.salesPerson.name}</div>
+                    ) : null}
                   </td>
                   <td>{r.subscriptionPlan?.name || '—'}</td>
                   <td><StatusBadge status={r.status} /></td>

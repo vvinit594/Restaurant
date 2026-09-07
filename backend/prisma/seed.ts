@@ -97,10 +97,71 @@ async function seedSuperAdmin() {
   console.log(`Super Admin created: ${email}`);
 }
 
+async function seedSalesPerson() {
+  const email = String(process.env.SALES_PERSON_EMAIL || '')
+    .trim()
+    .toLowerCase();
+  const password = String(process.env.SALES_PERSON_PASSWORD || '');
+  const name = String(process.env.SALES_PERSON_NAME || 'Sales Person').trim();
+
+  if (!email || !password) {
+    console.log(
+      'SALES_PERSON_EMAIL / SALES_PERSON_PASSWORD not set — skipping sales person seed.',
+    );
+    return;
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    if (existing.role !== UserRole.SALES_PERSON) {
+      console.log(
+        `User ${email} exists with role ${existing.role} — not converting to SALES_PERSON.`,
+      );
+      return;
+    }
+    let profile = await prisma.salesPerson.findUnique({
+      where: { userId: existing.id },
+    });
+    if (!profile) {
+      profile = await prisma.salesPerson.create({
+        data: {
+          userId: existing.id,
+          salesCode: 'SP00001',
+          status: 'ACTIVE',
+        },
+      });
+    }
+    console.log(
+      `Sales Person already exists: ${email} (${profile.salesCode})`,
+    );
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      passwordHash,
+      role: UserRole.SALES_PERSON,
+      isActive: true,
+    },
+  });
+  const profile = await prisma.salesPerson.create({
+    data: {
+      userId: user.id,
+      salesCode: 'SP00001',
+      status: 'ACTIVE',
+    },
+  });
+  console.log(`Sales Person created: ${email} (${profile.salesCode})`);
+}
+
 async function main() {
-  // Seed NEVER creates restaurants. Only Super Admin + subscription plans.
+  // Seed NEVER creates restaurants. Only Super Admin + plans (+ optional Sales Person).
   await seedPlans();
   await seedSuperAdmin();
+  await seedSalesPerson();
 }
 
 main()

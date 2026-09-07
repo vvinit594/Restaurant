@@ -56,6 +56,55 @@ export class AuthService {
     };
   }
 
+  async salesLogin(email: string, password: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user || !user.isActive || user.role !== UserRole.SALES_PERSON) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    const passwordOk = await bcrypt.compare(password, user.passwordHash);
+    if (!passwordOk) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    const profile = await this.prisma.salesPerson.findUnique({
+      where: { userId: user.id },
+    });
+    if (!profile || profile.status !== 'ACTIVE') {
+      throw new UnauthorizedException(
+        'Sales Person account is not active. Contact DilYum support.',
+      );
+    }
+
+    const safeUser = this.usersService.toSafeUser(user);
+    const accessToken = await this.signToken(safeUser, {
+      salesPersonId: profile.id,
+      salesCode: profile.salesCode,
+    });
+
+    auditLog('SALES_LOGIN', {
+      userId: safeUser.id,
+      email: safeUser.email,
+      salesPersonId: profile.id,
+      salesCode: profile.salesCode,
+    });
+
+    return {
+      accessToken,
+      user: {
+        id: safeUser.id,
+        name: safeUser.name,
+        email: safeUser.email,
+        role: safeUser.role,
+      },
+      salesPerson: {
+        id: profile.id,
+        salesCode: profile.salesCode,
+        status: profile.status,
+      },
+    };
+  }
+
   async restaurantLogin(email: string, password: string) {
     const user = await this.usersService.findByEmail(email);
     if (!user || !user.isActive || !RESTAURANT_ROLES.has(user.role)) {
@@ -127,13 +176,34 @@ export class AuthService {
     };
   }
 
-  async getMe(user: SafeUser & { restaurantId?: string }) {
+  async getMe(
+    user: SafeUser & {
+      restaurantId?: string;
+      salesPersonId?: string;
+      salesCode?: string;
+    },
+  ) {
     const base = {
       id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
     };
+
+    if (user.role === UserRole.SALES_PERSON) {
+      const profile = await this.prisma.salesPerson.findUnique({
+        where: { userId: user.id },
+      });
+      if (!profile) return base;
+      return {
+        ...base,
+        salesPerson: {
+          id: profile.id,
+          salesCode: profile.salesCode,
+          status: profile.status,
+        },
+      };
+    }
 
     if (!RESTAURANT_ROLES.has(user.role)) {
       return base;
@@ -205,7 +275,12 @@ export class AuthService {
 
   private async signToken(
     user: SafeUser,
-    extras: { restaurantId?: string; membershipRole?: string } = {},
+    extras: {
+      restaurantId?: string;
+      membershipRole?: string;
+      salesPersonId?: string;
+      salesCode?: string;
+    } = {},
   ) {
     const expiresIn = this.config.get<string>('JWT_EXPIRES_IN') || '12h';
     return this.jwtService.signAsync(
@@ -217,6 +292,8 @@ export class AuthService {
         ...(extras.membershipRole
           ? { membershipRole: extras.membershipRole }
           : {}),
+        ...(extras.salesPersonId ? { salesPersonId: extras.salesPersonId } : {}),
+        ...(extras.salesCode ? { salesCode: extras.salesCode } : {}),
       },
       {
         expiresIn: expiresIn as `${number}h` | `${number}d` | number,

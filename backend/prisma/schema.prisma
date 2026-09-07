@@ -12,6 +12,7 @@ enum UserRole {
   RESTAURANT_OWNER
   RESTAURANT_MANAGER
   RESTAURANT_STAFF
+  SALES_PERSON
 }
 
 enum RestaurantStatus {
@@ -37,6 +38,32 @@ enum QrCodeStatus {
   DISABLED
 }
 
+enum SalesPersonStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SalesLeadStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  DEMO
+  CONVERTED
+  LOST
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum CommissionRuleType {
+  FIXED
+  PERCENT
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -50,8 +77,80 @@ model User {
 
   memberships           RestaurantMembership[]
   restaurantsCreated    Restaurant[]           @relation("RestaurantCreatedBy")
+  salesProfile          SalesPerson?
 
   @@map("users")
+}
+
+model SalesPerson {
+  id        String            @id @default(cuid())
+  userId    String            @unique
+  salesCode String            @unique
+  phone     String?
+  status    SalesPersonStatus @default(ACTIVE)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurants  Restaurant[]
+  leads        SalesLead[]
+  commissions  Commission[]
+
+  @@index([status])
+  @@map("sales_persons")
+}
+
+model SalesLead {
+  id                    String          @id @default(cuid())
+  salesPersonId         String
+  contactName           String
+  restaurantName        String
+  phone                 String?
+  email                 String?
+  status                SalesLeadStatus @default(NEW)
+  notes                 String?
+  convertedRestaurantId String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  salesPerson SalesPerson @relation(fields: [salesPersonId], references: [id], onDelete: Cascade)
+
+  @@index([salesPersonId, status, createdAt])
+  @@map("sales_leads")
+}
+
+model CommissionRule {
+  id        String             @id @default(cuid())
+  planCode  String             @unique
+  type      CommissionRuleType @default(FIXED)
+  /// FIXED: rupees amount. PERCENT: percent of monthly plan price.
+  value     Decimal            @db.Decimal(10, 2)
+  isActive  Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@map("commission_rules")
+}
+
+model Commission {
+  id             String           @id @default(cuid())
+  salesPersonId  String
+  restaurantId   String
+  subscriptionId String           @unique
+  planCode       String
+  amount         Decimal          @db.Decimal(10, 2)
+  status         CommissionStatus @default(PENDING)
+  notes          String?
+  paidAt         DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  salesPerson SalesPerson @relation(fields: [salesPersonId], references: [id], onDelete: Cascade)
+  restaurant  Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([salesPersonId, status, createdAt])
+  @@index([restaurantId])
+  @@map("commissions")
 }
 
 model Restaurant {
@@ -69,11 +168,13 @@ model Restaurant {
   pincode         String?
   status          RestaurantStatus @default(ACTIVE)
   createdByUserId String?
+  salesPersonId   String?
   deletedAt       DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
   createdBy     User?                    @relation("RestaurantCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  salesPerson   SalesPerson?             @relation(fields: [salesPersonId], references: [id], onDelete: SetNull)
   memberships   RestaurantMembership[]
   subscriptions Subscription[]
   branches      Branch[]
@@ -82,8 +183,10 @@ model Restaurant {
   qrCodes       QrCode[]
   diningTables  DiningTable[]
   orders        Order[]
+  commissions   Commission[]
 
   @@index([createdByUserId])
+  @@index([salesPersonId])
   @@index([status, deletedAt])
   @@map("restaurants")
 }
