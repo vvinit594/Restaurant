@@ -25,8 +25,13 @@ export default function SalesLogin() {
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
     const trimmedEmail = email.trim();
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    if (!trimmedEmail) {
+      setError('Please enter your sales email.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setError('Please enter a valid email address.');
       return;
     }
@@ -34,6 +39,7 @@ export default function SalesLogin() {
       setError('Please enter your password.');
       return;
     }
+
     setLoading(true);
     try {
       await login({ email: trimmedEmail, password });
@@ -47,37 +53,51 @@ export default function SalesLogin() {
 
   return (
     <div className="admin-login-page">
-      <form className="admin-login-card" onSubmit={onSubmit}>
+      <div className="admin-login-card">
         <div className="admin-login-brand">
-          <span className="admin-pill">DilYum</span>
-          <h1>Sales Login</h1>
-          <p className="admin-muted">Sign in to your Sales Person panel.</p>
+          <span className="admin-pill">DILYUM</span>
+          <h1>Sales Person Login</h1>
+          <p>Sign in to onboard restaurants, track QR codes, and view commissions.</p>
         </div>
-        {error ? <div className="admin-alert admin-alert-error">{error}</div> : null}
-        <label className="admin-field">
-          <span>Email</span>
-          <input
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+
+        <form className="admin-form" onSubmit={onSubmit} noValidate>
+          <label className="admin-field">
+            <span>Sales Email</span>
+            <input
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="sales@example.com"
+              required
+              disabled={loading}
+            />
+          </label>
+
+          <label className="admin-field">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              disabled={loading}
+            />
+          </label>
+
+          {error ? <div className="admin-alert admin-alert-error">{error}</div> : null}
+
+          <button
+            type="submit"
+            className="admin-btn admin-btn-primary admin-btn-block"
             disabled={loading}
-          />
-        </label>
-        <label className="admin-field">
-          <span>Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-          />
-        </label>
-        <button type="submit" className="admin-btn admin-btn-primary" disabled={loading}>
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+          >
+            {loading ? 'Signing in…' : 'Next'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

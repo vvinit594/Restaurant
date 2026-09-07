@@ -251,22 +251,31 @@ export default function AdminSalesPersonsPage() {
       ) : null}
 
       {formOpen ? (
-        <div className="admin-modal-overlay" role="presentation" onClick={() => !saving && setFormOpen(false)}>
+        <div
+          className="admin-modal-overlay"
+          role="presentation"
+          onClick={() => !saving && setFormOpen(false)}
+        >
           <div
-            className="admin-modal"
+            className="admin-modal admin-modal-login"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-sales-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="create-sales-title">Create Sales Person</h3>
-            <p className="admin-muted">They will sign in at /sales-login with the credentials you set.</p>
-            <form onSubmit={onCreate}>
+            <div className="admin-login-brand">
+              <span className="admin-pill">DILYUM</span>
+              <h3 id="create-sales-title">Create Sales Person</h3>
+              <p>They will sign in at /sales-login with the credentials you set.</p>
+            </div>
+
+            <form className="admin-form" onSubmit={onCreate} noValidate>
               <label className="admin-field">
                 <span>Full Name *</span>
                 <input
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="Adarsh Sharma"
                   disabled={saving}
                   autoComplete="name"
                 />
@@ -277,6 +286,7 @@ export default function AdminSalesPersonsPage() {
                 <input
                   value={form.phone}
                   onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="98XXXXXXXX"
                   disabled={saving}
                   autoComplete="tel"
                 />
@@ -288,6 +298,7 @@ export default function AdminSalesPersonsPage() {
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="sales@example.com"
                   disabled={saving}
                   autoComplete="email"
                 />
@@ -299,6 +310,7 @@ export default function AdminSalesPersonsPage() {
                   type="password"
                   value={form.password}
                   onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                  placeholder="••••••••"
                   disabled={saving}
                   autoComplete="new-password"
                 />
@@ -306,17 +318,22 @@ export default function AdminSalesPersonsPage() {
                   <em className="admin-field-error">{formErrors.password}</em>
                 ) : null}
               </label>
-              <div className="admin-modal-actions">
+
+              <div className="admin-modal-actions admin-modal-actions-stack">
+                <button
+                  type="submit"
+                  className="admin-btn admin-btn-primary admin-btn-block"
+                  disabled={saving}
+                >
+                  {saving ? 'Creating…' : 'Create Sales Person'}
+                </button>
                 <button
                   type="button"
-                  className="admin-btn admin-btn-ghost"
+                  className="admin-btn admin-btn-light admin-btn-block"
                   onClick={() => setFormOpen(false)}
                   disabled={saving}
                 >
                   Cancel
-                </button>
-                <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
-                  {saving ? 'Creating…' : 'Create Sales Person'}
                 </button>
               </div>
             </form>

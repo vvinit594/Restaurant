@@ -76,6 +76,85 @@
   box-shadow: none;
 }
 
+/* Cream login/modal surfaces — readable inputs & cancel buttons */
+.admin-login-card .admin-field,
+.admin-modal .admin-field {
+  color: #1f1a17;
+}
+
+.admin-login-card .admin-field input,
+.admin-login-card .admin-field textarea,
+.admin-login-card .admin-field select,
+.admin-modal .admin-field input,
+.admin-modal .admin-field textarea,
+.admin-modal .admin-field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #e7e0d4;
+  background: #fff;
+  color: #1f1a17;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.admin-login-card .admin-field input::placeholder,
+.admin-modal .admin-field input::placeholder {
+  color: #a89888;
+}
+
+.admin-login-card .admin-field input:focus,
+.admin-modal .admin-field input:focus {
+  outline: none;
+  border-color: #d97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.18);
+}
+
+.admin-modal.admin-modal-login {
+  width: min(440px, 100%);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.admin-modal.admin-modal-login .admin-login-brand h3 {
+  font-size: 28px;
+  margin: 12px 0 6px;
+  color: #1f1a17;
+}
+
+.admin-modal.admin-modal-login .admin-login-brand p {
+  color: #6b5c52;
+  font-size: 14px;
+  margin: 0 0 4px;
+}
+
+.admin-modal.admin-modal-login .admin-btn-primary {
+  background: #d97706;
+  color: #fff7ed;
+  border-color: #b45309;
+}
+
+.admin-modal.admin-modal-login .admin-btn-primary:hover:not(:disabled) {
+  background: #b45309;
+}
+
+.admin-btn-light {
+  background: #fff;
+  color: #1f1a17;
+  border: 1px solid #d6cec2;
+}
+
+.admin-btn-light:hover:not(:disabled) {
+  background: #f5efe4;
+}
+
+.admin-modal-actions-stack {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .admin-pill {
   display: inline-flex;
   align-items: center;
