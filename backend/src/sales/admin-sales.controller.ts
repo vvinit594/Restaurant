@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AppRole } from '../common/constants';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -27,5 +35,18 @@ export class AdminSalesController {
     },
   ) {
     return this.salesService.adminCreateSalesPerson(body);
+  }
+
+  @Get(':id')
+  getOne(@Param('id') id: string) {
+    return this.salesService.adminGetSalesPerson(id);
+  }
+
+  @Patch(':id/status')
+  setStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
+    return this.salesService.adminSetSalesPersonStatus(id, body?.status);
   }
 }

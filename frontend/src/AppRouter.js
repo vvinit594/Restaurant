@@ -10,6 +10,7 @@ import AdminQrPage from './admin/AdminQrPage';
 import AddRestaurantPage from './admin/AddRestaurantPage';
 import RestaurantsPage from './admin/RestaurantsPage';
 import RestaurantDetailPage from './admin/RestaurantDetailPage';
+import AdminSalesPersonsPage from './admin/AdminSalesPersonsPage';
 import { AdminAuthProvider } from './admin/auth/AdminAuthContext';
 import ProtectedAdminRoute from './admin/auth/ProtectedAdminRoute';
 import { ToastProvider } from './admin/components/Toast';
@@ -65,6 +66,7 @@ export default function AppRouter() {
                 <Route path="restaurants" element={<RestaurantsPage />} />
                 <Route path="restaurants/new" element={<AddRestaurantPage />} />
                 <Route path="restaurants/:restaurantId" element={<RestaurantDetailPage />} />
+                <Route path="sales-persons" element={<AdminSalesPersonsPage />} />
                 <Route path="qr" element={<AdminQrPage />} />
                 <Route
                   path="analytics"

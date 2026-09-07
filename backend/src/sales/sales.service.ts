@@ -542,16 +542,29 @@ export class SalesService {
       .trim()
       .toLowerCase();
     const name = String(input.name || '').trim();
+    const phone = String(input.phone || '').trim();
     const password = String(input.password || '');
-    if (!email || !name || password.length < 8) {
+    if (!email || !name || !phone || password.length < 8) {
       throw new BadRequestException(
-        'Name, email, and password (min 8 chars) are required.',
+        'Name, phone, email, and password (min 8 chars) are required.',
       );
     }
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      throw new BadRequestException('An account with this email already exists.');
+      throw new BadRequestException(
+        'A Sales Person with this email already exists.',
+      );
+    }
+
+    const phoneClash = await this.prisma.salesPerson.findFirst({
+      where: { phone },
+      select: { id: true },
+    });
+    if (phoneClash) {
+      throw new BadRequestException(
+        'A Sales Person with this phone number already exists.',
+      );
     }
 
     const bcrypt = await import('bcrypt');
@@ -563,7 +576,7 @@ export class SalesService {
         data: {
           name,
           email,
-          phone: input.phone?.trim() || null,
+          phone,
           passwordHash,
           role: UserRole.SALES_PERSON,
           isActive: true,
@@ -573,7 +586,7 @@ export class SalesService {
         data: {
           userId: user.id,
           salesCode,
-          phone: input.phone?.trim() || null,
+          phone,
           status: SalesPersonStatus.ACTIVE,
         },
       });
@@ -591,7 +604,11 @@ export class SalesService {
       salesCode: created.profile.salesCode,
       name: created.user.name,
       email: created.user.email,
+      phone: created.profile.phone || '',
       status: created.profile.status,
+      restaurantsAdded: 0,
+      activeRestaurants: 0,
+      createdAt: created.profile.createdAt.toISOString(),
     };
   }
 
@@ -600,19 +617,107 @@ export class SalesService {
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { name: true, email: true, phone: true, isActive: true } },
-        _count: { select: { restaurants: true } },
+        restaurants: {
+          where: { deletedAt: null },
+          select: { status: true },
+        },
       },
     });
-    return rows.map((r) => ({
+    return rows.map((r) => this.toAdminSalesPersonDto(r));
+  }
+
+  async adminGetSalesPerson(id: string) {
+    const row = await this.prisma.salesPerson.findUnique({
+      where: { id },
+      include: {
+        user: { select: { name: true, email: true, phone: true, isActive: true } },
+        restaurants: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Sales Person not found.');
+    return {
+      ...this.toAdminSalesPersonDto(row),
+      restaurants: row.restaurants.map((rest) => ({
+        id: rest.id,
+        name: rest.name,
+        status: rest.status,
+        createdAt: rest.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async adminSetSalesPersonStatus(id: string, statusRaw: string) {
+    const status = String(statusRaw || '')
+      .trim()
+      .toUpperCase();
+    if (
+      status !== SalesPersonStatus.ACTIVE &&
+      status !== SalesPersonStatus.INACTIVE
+    ) {
+      throw new BadRequestException('Status must be ACTIVE or INACTIVE.');
+    }
+
+    const existing = await this.prisma.salesPerson.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, name: true, email: true, phone: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Sales Person not found.');
+
+    await this.prisma.$transaction([
+      this.prisma.salesPerson.update({
+        where: { id },
+        data: { status: status as SalesPersonStatus },
+      }),
+      this.prisma.user.update({
+        where: { id: existing.userId },
+        data: { isActive: status === SalesPersonStatus.ACTIVE },
+      }),
+    ]);
+
+    auditLog('SALES_PERSON_STATUS_CHANGED', {
+      salesPersonId: id,
+      salesCode: existing.salesCode,
+      status,
+    });
+
+    return this.adminGetSalesPerson(id);
+  }
+
+  private toAdminSalesPersonDto(r: {
+    id: string;
+    salesCode: string;
+    phone: string | null;
+    status: SalesPersonStatus;
+    createdAt: Date;
+    user: { name: string; email: string; phone: string | null };
+    restaurants: Array<{ status: RestaurantStatus }>;
+  }) {
+    const restaurantsAdded = r.restaurants.length;
+    const activeRestaurants = r.restaurants.filter(
+      (rest) => rest.status === RestaurantStatus.ACTIVE,
+    ).length;
+    return {
       id: r.id,
       salesCode: r.salesCode,
       name: r.user.name,
       email: r.user.email,
       phone: r.phone || r.user.phone || '',
       status: r.status,
-      restaurantsAdded: r._count.restaurants,
+      restaurantsAdded,
+      activeRestaurants,
       createdAt: r.createdAt.toISOString(),
-    }));
+    };
   }
 
   private async nextSalesCode(): Promise<string> {
