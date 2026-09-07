@@ -62,7 +62,8 @@ export default function SalesProfilePage() {
       {loading ? <Loader label="Loading profile…" /> : null}
 
       {!loading && profile ? (
-        <form className="sales-panel-card" onSubmit={onSave}>
+        <form className="admin-form-card" onSubmit={onSave}>
+          <h2>Account details</h2>
           <div className="admin-form-grid">
             <label className="admin-field">
               <span>Sales ID</span>
@@ -74,11 +75,21 @@ export default function SalesProfilePage() {
             </label>
             <label className="admin-field">
               <span>Name</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} disabled={saving} />
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={saving}
+                placeholder="Your full name"
+              />
             </label>
             <label className="admin-field">
               <span>Phone</span>
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={saving} />
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                disabled={saving}
+                placeholder="Phone number"
+              />
             </label>
             <label className="admin-field">
               <span>Status</span>
@@ -93,9 +104,11 @@ export default function SalesProfilePage() {
               />
             </label>
           </div>
-          <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
+          <div className="order-checkout-actions" style={{ marginTop: 16 }}>
+            <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </form>
       ) : null}
     </div>

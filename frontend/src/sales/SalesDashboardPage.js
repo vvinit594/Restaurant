@@ -107,13 +107,13 @@ export default function SalesDashboardPage() {
           </div>
 
           <div className="sales-dash-grid">
-            <section className="sales-panel-card">
+            <section className="admin-panel">
               <h2>Weekly Performance</h2>
               <p className="admin-muted">Restaurants onboarded per day.</p>
               <WeeklyChart data={data.weeklyPerformance} />
             </section>
 
-            <section className="sales-panel-card">
+            <section className="admin-panel">
               <h2>Commission</h2>
               {data.commissionRulesConfigured ? (
                 <>

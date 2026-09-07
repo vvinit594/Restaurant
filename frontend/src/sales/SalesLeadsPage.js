@@ -78,7 +78,7 @@ export default function SalesLeadsPage() {
 
       {error ? <div className="admin-alert admin-alert-error">{error}</div> : null}
 
-      <form className="sales-panel-card" onSubmit={onCreate} style={{ marginBottom: 16 }}>
+      <form className="admin-form-card" onSubmit={onCreate} style={{ marginBottom: 16 }}>
         <h2>Add lead</h2>
         <div className="admin-form-grid">
           {[
@@ -94,22 +94,26 @@ export default function SalesLeadsPage() {
                 onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}
                 disabled={saving}
                 required={key === 'contactName' || key === 'restaurantName'}
+                placeholder={label}
               />
             </label>
           ))}
         </div>
-        <label className="admin-field">
+        <label className="admin-field" style={{ marginTop: 12 }}>
           <span>Notes</span>
           <textarea
-            rows={2}
+            rows={3}
             value={form.notes}
             onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
             disabled={saving}
+            placeholder="Optional notes"
           />
         </label>
-        <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
-          {saving ? 'Saving…' : 'Add Lead'}
-        </button>
+        <div className="order-checkout-actions" style={{ marginTop: 16 }}>
+          <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Add Lead'}
+          </button>
+        </div>
       </form>
 
       {loading ? <Loader label="Loading leads…" /> : null}
