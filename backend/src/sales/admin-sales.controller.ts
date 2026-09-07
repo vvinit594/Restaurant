@@ -37,6 +37,11 @@ export class AdminSalesController {
     return this.salesService.adminCreateSalesPerson(body);
   }
 
+  @Get(':id/pending-leads')
+  pendingLeads(@Param('id') id: string) {
+    return this.salesService.adminGetPendingLeads(id);
+  }
+
   @Get(':id')
   getOne(@Param('id') id: string) {
     return this.salesService.adminGetSalesPerson(id);

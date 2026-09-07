@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
@@ -29,7 +29,9 @@ const INITIAL = {
 
 export default function AddRestaurantPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { push } = useToast();
+  const leadPrefill = location.state?.fromLead || null;
   const [form, setForm] = useState(INITIAL);
   const [plans, setPlans] = useState([]);
   const [slugTouched, setSlugTouched] = useState(false);
@@ -37,10 +39,31 @@ export default function AddRestaurantPage() {
   const [submitting, setSubmitting] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
+  const [leadContext] = useState(leadPrefill);
 
   useEffect(() => {
     getSubscriptionPlans().then(setPlans).catch(() => setPlans([]));
   }, []);
+
+  useEffect(() => {
+    if (!leadPrefill) return;
+    setForm((prev) => ({
+      ...prev,
+      name: leadPrefill.restaurantName || prev.name,
+      slug: leadPrefill.restaurantName
+        ? slugify(leadPrefill.restaurantName)
+        : prev.slug,
+      phone: leadPrefill.phone || prev.phone,
+      email: leadPrefill.email || prev.email,
+      adminName: leadPrefill.contactName || prev.adminName,
+      adminEmail: leadPrefill.email || prev.adminEmail,
+      adminPhone: leadPrefill.phone || prev.adminPhone,
+      description: leadPrefill.notes
+        ? `Lead notes: ${leadPrefill.notes}`
+        : prev.description,
+    }));
+    if (leadPrefill.restaurantName) setSlugTouched(true);
+  }, [leadPrefill]);
 
   const setField = (key, value) => {
     setForm((prev) => {
@@ -120,9 +143,15 @@ export default function AddRestaurantPage() {
         subscription: {
           plan: form.subscriptionPlanId,
         },
+        salesPersonId: leadContext?.salesPersonId || undefined,
+        leadId: leadContext?.leadId || undefined,
       });
-      push(`Restaurant “${created.name}” created successfully.`);
-      navigate(`/admin/restaurants/${created.id}`);
+      push(
+        leadContext
+          ? `Restaurant “${created.name}” created from lead and linked to ${leadContext.salesCode}.`
+          : `Restaurant “${created.name}” created successfully.`,
+      );
+      navigate(`/admin/restaurants/${created.id}`, { replace: true });
     } catch (err) {
       const detail = err.message || 'Could not create restaurant.';
       push(
@@ -147,10 +176,15 @@ export default function AddRestaurantPage() {
         <div>
           <h1>Add Restaurant</h1>
           <p className="admin-muted">
-            Only Super Admin can create restaurants. No public signup.
+            {leadContext
+              ? `Creating from lead request (${leadContext.salesCode} · ${leadContext.salesPersonName}). Prefill can be edited before submit.`
+              : 'Only Super Admin can create restaurants. No public signup.'}
           </p>
         </div>
-        <Link to="/admin/restaurants" className="admin-btn admin-btn-ghost">
+        <Link
+          to={leadContext ? '/admin/sales-persons' : '/admin/restaurants'}
+          className="admin-btn admin-btn-ghost"
+        >
           Cancel
         </Link>
       </div>

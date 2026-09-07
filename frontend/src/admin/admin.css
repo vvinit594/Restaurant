@@ -149,6 +149,36 @@
   background: #f5efe4;
 }
 
+@keyframes adminRequestPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(217, 119, 6, 0);
+  }
+}
+
+.admin-request-pulse {
+  animation: adminRequestPulse 1.8s ease-in-out infinite;
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 8px 12px;
+}
+
+.admin-lead-request-list .admin-panel {
+  background: #f8f1e7;
+  border: 1px solid #e7e0d4;
+}
+
+.admin-lead-request-list .admin-dl dt {
+  color: #6b5c52;
+}
+
+.admin-lead-request-list .admin-dl dd {
+  color: #1f1a17;
+}
+
 .admin-modal-actions-stack {
   display: grid;
   gap: 10px;

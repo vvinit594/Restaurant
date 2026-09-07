@@ -144,4 +144,15 @@ export class CreateRestaurantDto {
   @ValidateNested()
   @Type(() => SubscriptionBodyDto)
   subscription?: SubscriptionBodyDto;
+
+  /** When creating from a Sales Person lead (Super Admin only). */
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  salesPersonId?: string;
+
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  leadId?: string;
 }

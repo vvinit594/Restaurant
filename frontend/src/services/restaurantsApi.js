@@ -83,6 +83,9 @@ export async function createRestaurant(payload) {
     subscriptionPlan: String(plan).toUpperCase(),
   };
 
+  if (payload.salesPersonId) body.salesPersonId = payload.salesPersonId;
+  if (payload.leadId) body.leadId = payload.leadId;
+
   // Drop undefined keys so Nest optional validators behave cleanly
   Object.keys(body.restaurant).forEach((k) => {
     if (body.restaurant[k] === undefined || body.restaurant[k] === '') {

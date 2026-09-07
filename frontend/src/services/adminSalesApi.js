@@ -44,6 +44,13 @@ export async function createAdminSalesPerson(payload) {
   });
 }
 
+export async function getAdminSalesPersonPendingLeads(id) {
+  return apiRequest(`/admin/sales-persons/${encodeURIComponent(id)}/pending-leads`, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
+
 export async function setAdminSalesPersonStatus(id, status) {
   return apiRequest(`/admin/sales-persons/${encodeURIComponent(id)}/status`, {
     method: 'PATCH',

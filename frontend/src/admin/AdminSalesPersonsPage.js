@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Loader from '../components/Loader';
 import { validatePasswordStrength } from '../services/passwordHash';
 import {
   createAdminSalesPerson,
   getAdminSalesPerson,
+  getAdminSalesPersonPendingLeads,
   getAdminSalesPersons,
   setAdminSalesPersonStatus,
 } from '../services/adminSalesApi';
@@ -38,6 +40,7 @@ function statusLabel(status) {
 }
 
 export default function AdminSalesPersonsPage() {
+  const navigate = useNavigate();
   const { push } = useToast();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +53,8 @@ export default function AdminSalesPersonsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [requestModal, setRequestModal] = useState(null);
+  const [requestLoading, setRequestLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,6 +128,39 @@ export default function AdminSalesPersonsPage() {
     }
   };
 
+  const openRequests = async (row) => {
+    setRequestLoading(true);
+    setRequestModal(null);
+    try {
+      const data = await getAdminSalesPersonPendingLeads(row.id);
+      setRequestModal(data);
+    } catch (err) {
+      push(err.message || 'Could not load lead requests.', 'error');
+    } finally {
+      setRequestLoading(false);
+    }
+  };
+
+  const proceedToAdd = (lead) => {
+    if (!requestModal?.salesPerson || !lead) return;
+    setRequestModal(null);
+    navigate('/admin/restaurants/new', {
+      state: {
+        fromLead: {
+          leadId: lead.id,
+          salesPersonId: requestModal.salesPerson.id,
+          salesCode: requestModal.salesPerson.salesCode,
+          salesPersonName: requestModal.salesPerson.name,
+          restaurantName: lead.restaurantName || '',
+          contactName: lead.contactName || '',
+          phone: lead.phone || '',
+          email: lead.email || '',
+          notes: lead.notes || '',
+        },
+      },
+    });
+  };
+
   const onConfirmStatus = async () => {
     if (!confirm) return;
     setBusy(true);
@@ -185,6 +223,7 @@ export default function AdminSalesPersonsPage() {
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Restaurants Added</th>
+                <th>Request</th>
                 <th>Status</th>
                 <th>Joined</th>
                 <th>Actions</th>
@@ -193,6 +232,7 @@ export default function AdminSalesPersonsPage() {
             <tbody>
               {rows.map((row) => {
                 const active = String(row.status).toUpperCase() === 'ACTIVE';
+                const pending = Number(row.pendingRequestCount) || 0;
                 return (
                   <tr key={row.id}>
                     <td>
@@ -208,6 +248,21 @@ export default function AdminSalesPersonsPage() {
                     <td>{row.email}</td>
                     <td>{row.phone || '—'}</td>
                     <td>{row.restaurantsAdded ?? 0}</td>
+                    <td>
+                      {pending > 0 ? (
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn-primary admin-request-pulse"
+                          onClick={() => openRequests(row)}
+                        >
+                          {pending === 1
+                            ? 'View Request'
+                            : `View Requests (${pending})`}
+                        </button>
+                      ) : (
+                        <span className="admin-muted">No pending request</span>
+                      )}
+                    </td>
                     <td>
                       <span
                         className={`admin-badge ${
@@ -435,6 +490,109 @@ export default function AdminSalesPersonsPage() {
                   : 'Activate'}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {requestLoading ? (
+        <div className="admin-modal-overlay" role="presentation">
+          <div className="admin-modal admin-modal-sm">
+            <Loader label="Loading requests…" />
+          </div>
+        </div>
+      ) : null}
+
+      {requestModal && !requestLoading ? (
+        <div
+          className="admin-modal-overlay"
+          role="presentation"
+          onClick={() => setRequestModal(null)}
+        >
+          <div
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lead-request-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(560px, 100%)', maxHeight: '90vh', overflow: 'auto' }}
+          >
+            <div className="admin-page-header" style={{ marginBottom: 12 }}>
+              <div>
+                <h3 id="lead-request-title" style={{ margin: 0 }}>
+                  Restaurant Lead Request
+                </h3>
+                <p className="admin-muted" style={{ margin: '4px 0 0' }}>
+                  Pending requests from this Sales Person.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={() => setRequestModal(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            <dl className="admin-dl" style={{ marginBottom: 16 }}>
+              <div>
+                <dt>Sales Person</dt>
+                <dd>{requestModal.salesPerson?.name}</dd>
+              </div>
+              <div>
+                <dt>Sales ID</dt>
+                <dd>{requestModal.salesPerson?.salesCode}</dd>
+              </div>
+            </dl>
+
+            {(requestModal.leads || []).length === 0 ? (
+              <div className="admin-empty">
+                <p>No pending requests.</p>
+              </div>
+            ) : (
+              <div className="admin-lead-request-list">
+                {requestModal.leads.map((lead) => (
+                  <article key={lead.id} className="admin-panel" style={{ marginBottom: 12 }}>
+                    <h4 style={{ margin: '0 0 10px' }}>{lead.restaurantName}</h4>
+                    <dl className="admin-dl">
+                      <div>
+                        <dt>Contact Name</dt>
+                        <dd>{lead.contactName}</dd>
+                      </div>
+                      <div>
+                        <dt>Phone</dt>
+                        <dd>{lead.phone || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Email</dt>
+                        <dd>{lead.email || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Notes</dt>
+                        <dd>{lead.notes || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Created</dt>
+                        <dd>{formatDate(lead.createdAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Lead status</dt>
+                        <dd>{lead.status}</dd>
+                      </div>
+                    </dl>
+                    <div className="admin-modal-actions" style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-primary"
+                        onClick={() => proceedToAdd(lead)}
+                      >
+                        Proceed to Add
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : null}

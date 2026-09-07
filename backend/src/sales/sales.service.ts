@@ -621,9 +621,56 @@ export class SalesService {
           where: { deletedAt: null },
           select: { status: true },
         },
+        _count: {
+          select: {
+            leads: {
+              where: {
+                convertedRestaurantId: null,
+                status: {
+                  notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST],
+                },
+              },
+            },
+          },
+        },
       },
     });
     return rows.map((r) => this.toAdminSalesPersonDto(r));
+  }
+
+  async adminGetPendingLeads(salesPersonId: string) {
+    const sp = await this.prisma.salesPerson.findUnique({
+      where: { id: salesPersonId },
+      include: {
+        user: { select: { name: true, email: true } },
+      },
+    });
+    if (!sp) throw new NotFoundException('Sales Person not found.');
+
+    const leads = await this.prisma.salesLead.findMany({
+      where: {
+        salesPersonId,
+        convertedRestaurantId: null,
+        status: {
+          notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST],
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      salesPerson: {
+        id: sp.id,
+        salesCode: sp.salesCode,
+        name: sp.user.name,
+        email: sp.user.email,
+      },
+      pendingCount: leads.length,
+      leads: leads.map((l) => ({
+        ...this.toLeadDto(l),
+        requestStatus: 'PENDING',
+      })),
+    };
   }
 
   async adminGetSalesPerson(id: string) {
@@ -640,6 +687,18 @@ export class SalesService {
             createdAt: true,
           },
           orderBy: { createdAt: 'desc' },
+        },
+        _count: {
+          select: {
+            leads: {
+              where: {
+                convertedRestaurantId: null,
+                status: {
+                  notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST],
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -702,11 +761,13 @@ export class SalesService {
     createdAt: Date;
     user: { name: string; email: string; phone: string | null };
     restaurants: Array<{ status: RestaurantStatus }>;
+    _count?: { leads?: number };
   }) {
     const restaurantsAdded = r.restaurants.length;
     const activeRestaurants = r.restaurants.filter(
       (rest) => rest.status === RestaurantStatus.ACTIVE,
     ).length;
+    const pendingRequestCount = r._count?.leads ?? 0;
     return {
       id: r.id,
       salesCode: r.salesCode,
@@ -716,6 +777,7 @@ export class SalesService {
       status: r.status,
       restaurantsAdded,
       activeRestaurants,
+      pendingRequestCount,
       createdAt: r.createdAt.toISOString(),
     };
   }
@@ -790,6 +852,8 @@ export class SalesService {
     createdAt: Date;
     updatedAt: Date;
   }) {
+    const processed =
+      l.status === SalesLeadStatus.CONVERTED || Boolean(l.convertedRestaurantId);
     return {
       id: l.id,
       contactName: l.contactName,
@@ -799,6 +863,11 @@ export class SalesService {
       status: l.status,
       notes: l.notes || '',
       convertedRestaurantId: l.convertedRestaurantId,
+      requestStatus: processed
+        ? 'PROCESSED'
+        : l.status === SalesLeadStatus.LOST
+          ? 'LOST'
+          : 'PENDING',
       createdAt: l.createdAt.toISOString(),
       updatedAt: l.updatedAt.toISOString(),
     };

@@ -9,6 +9,7 @@ import {
   Prisma,
   QrCodeStatus,
   RestaurantStatus,
+  SalesLeadStatus,
   UserRole,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -126,7 +127,7 @@ export class AdminRestaurantsService {
   async create(
     dto: CreateRestaurantDto,
     adminUser: { id: string; email?: string },
-    options?: { salesPersonId?: string },
+    options?: { salesPersonId?: string; leadId?: string },
   ) {
     const restaurantInput = dto.restaurant;
     const ownerInput = dto.admin || dto.owner;
@@ -137,11 +138,51 @@ export class AdminRestaurantsService {
         '',
     );
 
+    const salesPersonId =
+      options?.salesPersonId || dto.salesPersonId || undefined;
+    const leadId = options?.leadId || dto.leadId || undefined;
+
     if (!ownerInput) {
       throw new BadRequestException('Restaurant admin/owner details are required.');
     }
     if (!planCode) {
       throw new BadRequestException('Subscription plan is required.');
+    }
+
+    let pendingLead: {
+      id: string;
+      salesPersonId: string;
+    } | null = null;
+
+    if (leadId) {
+      if (!salesPersonId) {
+        throw new BadRequestException(
+          'salesPersonId is required when processing a Restaurant Lead.',
+        );
+      }
+      const lead = await this.prisma.salesLead.findFirst({
+        where: {
+          id: leadId,
+          salesPersonId,
+          convertedRestaurantId: null,
+          status: { notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST] },
+        },
+        select: { id: true, salesPersonId: true },
+      });
+      if (!lead) {
+        throw new BadRequestException(
+          'This Restaurant Lead is not available for processing (already processed or not found).',
+        );
+      }
+      pendingLead = lead;
+    } else if (salesPersonId) {
+      const sp = await this.prisma.salesPerson.findUnique({
+        where: { id: salesPersonId },
+        select: { id: true },
+      });
+      if (!sp) {
+        throw new BadRequestException('Sales Person not found.');
+      }
     }
 
     const slug = String(restaurantInput.slug || '')
@@ -199,7 +240,7 @@ export class AdminRestaurantsService {
             pincode: restaurantInput.pincode?.trim() || null,
             status: RestaurantStatus.ACTIVE,
             createdByUserId: adminUser.id,
-            salesPersonId: options?.salesPersonId || null,
+            salesPersonId: salesPersonId || null,
           },
         });
 
@@ -274,6 +315,28 @@ export class AdminRestaurantsService {
 
         const qr = await this.qrService.createPrimaryInTransaction(tx, restaurant);
 
+        if (pendingLead) {
+          const updated = await tx.salesLead.updateMany({
+            where: {
+              id: pendingLead.id,
+              salesPersonId: pendingLead.salesPersonId,
+              convertedRestaurantId: null,
+              status: {
+                notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST],
+              },
+            },
+            data: {
+              status: SalesLeadStatus.CONVERTED,
+              convertedRestaurantId: restaurant.id,
+            },
+          });
+          if (updated.count !== 1) {
+            throw new ConflictException(
+              'This Restaurant Lead was already processed. Restaurant creation aborted.',
+            );
+          }
+        }
+
         return { restaurant, owner, qr, subscription, planCode: plan.code };
       },
       { maxWait: 10_000, timeout: 30_000 },
@@ -287,7 +350,8 @@ export class AdminRestaurantsService {
       ownerUserId: created.owner.id,
       qrId: created.qr.id,
       qrToken: created.qr.token,
-      salesPersonId: options?.salesPersonId || null,
+      salesPersonId: salesPersonId || null,
+      leadId: pendingLead?.id || null,
     });
 
     return {
@@ -311,6 +375,7 @@ export class AdminRestaurantsService {
         id: created.subscription.id,
         planCode: created.planCode,
       },
+      leadId: pendingLead?.id || null,
     };
   }
 

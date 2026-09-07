@@ -134,6 +134,7 @@ export default function SalesLeadsPage() {
                 <th>Restaurant</th>
                 <th>Phone</th>
                 <th>Status</th>
+                <th>Request</th>
                 <th>Created</th>
               </tr>
             </thead>
@@ -147,16 +148,30 @@ export default function SalesLeadsPage() {
                   <td>{l.restaurantName}</td>
                   <td>{l.phone || '—'}</td>
                   <td>
-                    <select
-                      value={l.status}
-                      onChange={(e) => onStatus(l.id, e.target.value)}
-                    >
-                      {STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
+                    {l.requestStatus === 'PROCESSED' ? (
+                      <span className="admin-badge admin-badge-active">CONVERTED</span>
+                    ) : (
+                      <select
+                        value={l.status}
+                        onChange={(e) => onStatus(l.id, e.target.value)}
+                        disabled={l.requestStatus === 'PROCESSED'}
+                      >
+                        {STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td>
+                    <span className="admin-muted">
+                      {l.requestStatus === 'PROCESSED'
+                        ? 'Processed by Admin'
+                        : l.requestStatus === 'LOST'
+                          ? 'Lost'
+                          : 'Pending Admin Review'}
+                    </span>
                   </td>
                   <td>{new Date(l.createdAt).toLocaleDateString()}</td>
                 </tr>
