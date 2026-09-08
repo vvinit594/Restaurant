@@ -25,7 +25,7 @@ const INITIAL = {
   adminPhone: '',
   adminPassword: '',
   confirmPassword: '',
-  subscriptionPlanId: 'monthly',
+  subscriptionPlanId: 'trial_10_days',
 };
 
 export default function AddRestaurantPage() {

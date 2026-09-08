@@ -100,6 +100,7 @@ export class SalesService {
         subscriptionId: created.subscription.id,
         planCode: created.subscription.planCode,
         priceLabel: plan?.priceLabel,
+        priceAmount: plan?.priceAmount != null ? Number(plan.priceAmount) : null,
       });
     }
 
@@ -128,7 +129,7 @@ export class SalesService {
       orderBy: { createdAt: 'desc' },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
           include: { plan: true },
         },
@@ -153,7 +154,7 @@ export class SalesService {
       },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
           include: { plan: true },
         },
@@ -203,7 +204,7 @@ export class SalesService {
       where: { salesPersonId: sp.id, deletedAt: null },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
           include: { plan: true },
         },
@@ -353,7 +354,9 @@ export class SalesService {
         priceAmount:
           plan?.priceAmount != null ? Number(plan.priceAmount) : null,
         billingMonths: plan?.billingMonths ?? null,
+        billingDays: plan?.billingDays ?? null,
         branchLimit: plan?.branchLimit ?? null,
+        planType: plan?.planType ?? null,
         monthlyAmount: parseMonthlyPriceLabel(
           plan?.priceLabel,
           plan?.priceAmount,
@@ -915,7 +918,9 @@ export class SalesService {
         priceLabel: string;
         priceAmount?: unknown;
         billingMonths?: number;
+        billingDays?: number;
         branchLimit?: number;
+        planType?: string;
       };
     }>;
     qrCodes: Array<{
@@ -947,7 +952,9 @@ export class SalesService {
             priceAmount:
               plan.priceAmount != null ? Number(plan.priceAmount) : null,
             billingMonths: plan.billingMonths ?? null,
+            billingDays: plan.billingDays ?? null,
             branchLimit: plan.branchLimit ?? null,
+            planType: plan.planType ?? null,
             status: r.subscriptions[0]?.status || null,
             startedAt: r.subscriptions[0]?.startedAt?.toISOString() || null,
             endsAt: r.subscriptions[0]?.endsAt?.toISOString() || null,

@@ -29,6 +29,7 @@ enum MembershipRole {
 
 enum SubscriptionStatus {
   ACTIVE
+  TRIAL
   CANCELLED
   PAST_DUE
 }
@@ -217,11 +218,16 @@ model SubscriptionPlan {
   /// Trusted rupee amount (backend source of truth).
   priceAmount         Decimal  @default(0) @db.Decimal(10, 2)
   billingMonths       Int      @default(1)
+  /// When > 0, subscription end is startedAt + billingDays (e.g. free trial).
+  billingDays         Int      @default(0)
   branchLimit         Int      @default(5)
   badge               String?
   description         String?
   specialNotice       String?
   isNewRestaurantOnly Boolean  @default(false)
+  /// FREE_TRIAL | PAID
+  planType            String   @default("PAID")
+  paymentRequired     Boolean  @default(true)
   features            Json
   sortOrder           Int      @default(0)
   isActive            Boolean  @default(true)

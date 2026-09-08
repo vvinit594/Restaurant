@@ -82,7 +82,7 @@ export default function AppRouter() {
                   element={
                     <AdminPlaceholder
                       title="Subscriptions"
-                      description="Active plans: Monthly Plan (₹1,499/mo) and Launch Plan (₹2,999 / 3 months)."
+                      description="Active plans: 10 Days Free Trial, Monthly (₹1,499/mo), and Launch (₹2,999 / 3 months)."
                     />
                   }
                 />

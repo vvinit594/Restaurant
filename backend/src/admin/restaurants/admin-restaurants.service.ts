@@ -10,19 +10,27 @@ import {
   QrCodeStatus,
   RestaurantStatus,
   SalesLeadStatus,
+  SubscriptionStatus,
   UserRole,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { auditLog } from '../../common/audit-log';
 import {
   ACTIVE_PLAN_CODES,
-  addMonths,
+  computeSubscriptionEndsAt,
   getPlanConfig,
+  isPaymentRequiredForPlan,
+  isSubscriptionPeriodActive,
 } from '../../common/subscription-plans';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QrService } from '../../qr/qr.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+
+const LIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
+  SubscriptionStatus.ACTIVE,
+  SubscriptionStatus.TRIAL,
+];
 
 const OWNER_INCLUDE = {
   salesPerson: {
@@ -33,7 +41,7 @@ const OWNER_INCLUDE = {
     },
   },
   subscriptions: {
-    where: { status: 'ACTIVE' as const },
+    where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
     take: 1,
     include: { plan: true },
   },
@@ -53,7 +61,7 @@ const OWNER_INCLUDE = {
       },
     },
   },
-} as const;
+} satisfies Prisma.RestaurantInclude;
 
 @Injectable()
 export class AdminRestaurantsService {
@@ -103,7 +111,7 @@ export class AdminRestaurantsService {
           },
         },
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
           take: 1,
           include: { plan: true },
         },
@@ -218,7 +226,7 @@ export class AdminRestaurantsService {
 
     if (!ACTIVE_PLAN_CODES.includes(planCode as (typeof ACTIVE_PLAN_CODES)[number])) {
       throw new BadRequestException(
-        'Selected subscription plan is not available for new restaurants. Choose Monthly or Launch.',
+        'Selected subscription plan is not available for new restaurants. Choose Free Trial, Monthly, or Launch.',
       );
     }
 
@@ -229,13 +237,32 @@ export class AdminRestaurantsService {
       throw new BadRequestException('Selected subscription plan was not found.');
     }
 
-    // Launch Plan is for new restaurants only (create = always eligible).
-    await this.assertLaunchEligibility(plan.code, { isNewRestaurant: true });
-
     const planConfig = getPlanConfig(plan.code);
-    const billingMonths = plan.billingMonths || planConfig?.billingMonths || 1;
+    await this.assertPlanEligibility(plan, {
+      isNewRestaurant: true,
+      ownerEmail,
+      restaurantEmail: String(restaurantInput.email || '')
+        .trim()
+        .toLowerCase(),
+    });
+
     const startedAt = new Date();
-    const endsAt = addMonths(startedAt, billingMonths);
+    const endsAt = computeSubscriptionEndsAt(startedAt, {
+      billingDays: plan.billingDays || planConfig?.billingDays || 0,
+      billingMonths: plan.billingMonths || planConfig?.billingMonths || 0,
+    });
+
+    const paymentRequired =
+      plan.paymentRequired ??
+      planConfig?.paymentRequired ??
+      isPaymentRequiredForPlan(plan.code);
+    const subscriptionStatus =
+      plan.planType === 'FREE_TRIAL' || planConfig?.planType === 'FREE_TRIAL'
+        ? ('TRIAL' as const)
+        : ('ACTIVE' as const);
+
+    // Trusted plan config only — never create a paid checkout for ₹0 / free trial.
+    void paymentRequired;
 
     const passwordHash = await bcrypt.hash(password, 12);
     const coverImageUrl =
@@ -287,7 +314,7 @@ export class AdminRestaurantsService {
           data: {
             restaurantId: restaurant.id,
             planId: plan.id,
-            status: 'ACTIVE',
+            status: subscriptionStatus,
             startedAt,
             endsAt,
           },
@@ -402,6 +429,7 @@ export class AdminRestaurantsService {
       subscription: {
         id: created.subscription.id,
         planCode: created.planCode,
+        status: created.subscription.status,
         startedAt: created.subscription.startedAt?.toISOString?.()
           ? created.subscription.startedAt.toISOString()
           : created.subscription.startedAt,
@@ -410,7 +438,11 @@ export class AdminRestaurantsService {
           : created.subscription.endsAt || null,
         priceAmount: Number(plan.priceAmount),
         billingMonths: plan.billingMonths,
+        billingDays: plan.billingDays,
         branchLimit: plan.branchLimit,
+        planType: plan.planType,
+        paymentRequired:
+          plan.paymentRequired ?? isPaymentRequiredForPlan(plan.code),
       },
       leadId: pendingLead?.id || null,
     };
@@ -584,7 +616,10 @@ export class AdminRestaurantsService {
         });
 
         await tx.subscription.updateMany({
-          where: { restaurantId: id, status: 'ACTIVE' },
+          where: {
+            restaurantId: id,
+            status: { in: LIVE_SUBSCRIPTION_STATUSES },
+          },
           data: { status: 'CANCELLED' },
         });
 
@@ -638,7 +673,7 @@ export class AdminRestaurantsService {
       data: { status },
       include: {
         subscriptions: {
-          where: { status: 'ACTIVE' },
+          where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
           take: 1,
           include: { plan: true },
         },
@@ -690,11 +725,17 @@ export class AdminRestaurantsService {
         priceLabel: p.priceLabel,
         priceAmount: Number(p.priceAmount),
         billingMonths: p.billingMonths,
+        billingDays: p.billingDays,
         branchLimit: p.branchLimit,
         badge: p.badge || config?.badge || null,
         description: p.description || config?.description || null,
         specialNotice: p.specialNotice || config?.specialNotice || null,
         isNewRestaurantOnly: p.isNewRestaurantOnly,
+        planType: p.planType || config?.planType || 'PAID',
+        paymentRequired:
+          p.paymentRequired ??
+          config?.paymentRequired ??
+          isPaymentRequiredForPlan(p.code),
         ctaLabel: config?.ctaLabel || `Choose ${p.name}`,
         theme: config?.theme || 'orange',
         features: Array.isArray(p.features) ? p.features : [],
@@ -703,16 +744,26 @@ export class AdminRestaurantsService {
   }
 
   /**
-   * Enforce branch limit from the restaurant's active subscription plan.
-   * Call before creating additional branches.
+   * Enforce branch limit from the restaurant's active (non-expired) subscription.
    */
   async assertBranchLimit(restaurantId: string) {
     const sub = await this.prisma.subscription.findFirst({
-      where: { restaurantId, status: 'ACTIVE' },
+      where: {
+        restaurantId,
+        status: { in: LIVE_SUBSCRIPTION_STATUSES },
+      },
       include: { plan: true },
       orderBy: { startedAt: 'desc' },
     });
-    const limit = sub?.plan?.branchLimit ?? 5;
+    if (
+      !sub ||
+      !isSubscriptionPeriodActive(sub.status, sub.endsAt)
+    ) {
+      throw new BadRequestException(
+        'No active subscription. Choose a paid plan or renew to add branches.',
+      );
+    }
+    const limit = sub.plan?.branchLimit ?? 5;
     const count = await this.prisma.branch.count({ where: { restaurantId } });
     if (count >= limit) {
       throw new BadRequestException(
@@ -722,8 +773,71 @@ export class AdminRestaurantsService {
   }
 
   /**
-   * Launch Plan may only be assigned when onboarding a new restaurant.
-   * Existing restaurants cannot switch to / request Launch via API.
+   * New-restaurant-only plans (Launch, Free Trial) + one-time free trial abuse guard.
+   */
+  async assertPlanEligibility(
+    plan: {
+      code: string;
+      isNewRestaurantOnly: boolean;
+      planType: string;
+    },
+    opts: {
+      isNewRestaurant: boolean;
+      ownerEmail: string;
+      restaurantEmail: string;
+    },
+  ) {
+    const config = getPlanConfig(plan.code);
+    const newOnly = plan.isNewRestaurantOnly ?? config?.isNewRestaurantOnly;
+    if (newOnly && !opts.isNewRestaurant) {
+      throw new BadRequestException(
+        `${plan.code === 'TRIAL_10_DAYS' ? 'Free Trial' : 'Launch Plan'} is only available for new restaurants.`,
+      );
+    }
+
+    const isTrial =
+      plan.planType === 'FREE_TRIAL' ||
+      config?.planType === 'FREE_TRIAL' ||
+      plan.code === 'TRIAL_10_DAYS';
+
+    if (!isTrial) return;
+
+    const ownerEmail = opts.ownerEmail.trim().toLowerCase();
+    const restaurantEmail = opts.restaurantEmail.trim().toLowerCase();
+
+    const priorTrial = await this.prisma.subscription.findFirst({
+      where: {
+        plan: { code: 'TRIAL_10_DAYS' },
+        restaurant: {
+          OR: [
+            ...(restaurantEmail ? [{ email: restaurantEmail }] : []),
+            ...(ownerEmail
+              ? [
+                  {
+                    memberships: {
+                      some: {
+                        user: { email: ownerEmail },
+                      },
+                    },
+                  },
+                  { email: ownerEmail },
+                ]
+              : []),
+          ],
+        },
+      },
+      select: { id: true },
+    });
+
+    if (priorTrial) {
+      throw new BadRequestException(
+        'This account has already used the 10 Days Free Trial. Choose Monthly or Launch Plan.',
+      );
+    }
+  }
+
+  /**
+   * @deprecated Use assertPlanEligibility — kept for callers that only need Launch check.
    */
   async assertLaunchEligibility(
     planCode: string,
@@ -779,7 +893,9 @@ export class AdminRestaurantsService {
         priceLabel: string;
         priceAmount?: unknown;
         billingMonths?: number;
+        billingDays?: number;
         branchLimit?: number;
+        planType?: string;
       };
     }>;
     memberships: Array<{
@@ -829,7 +945,9 @@ export class AdminRestaurantsService {
             priceAmount:
               plan.priceAmount != null ? Number(plan.priceAmount) : undefined,
             billingMonths: plan.billingMonths,
+            billingDays: plan.billingDays,
             branchLimit: plan.branchLimit,
+            planType: plan.planType,
           }
         : null,
       subscription: sub

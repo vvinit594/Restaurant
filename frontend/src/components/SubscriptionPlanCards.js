@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * Shared DilYum subscription plan selector (Monthly + Launch).
+ * Shared DilYum subscription plan selector (Trial + Monthly + Launch).
  * Expects plan objects from GET /plans (id, name, priceLabel, badge, features, …).
  */
 export default function SubscriptionPlanCards({
@@ -17,7 +17,12 @@ export default function SubscriptionPlanCards({
       {list.map((plan) => {
         const id = plan.id || String(plan.code || '').toLowerCase();
         const selected = selectedId === id;
-        const theme = plan.theme === 'blue' || id === 'launch' ? 'blue' : 'orange';
+        let theme = plan.theme || 'orange';
+        if (!plan.theme) {
+          if (id === 'launch') theme = 'blue';
+          else if (id === 'trial_10_days') theme = 'trial';
+          else theme = 'orange';
+        }
         return (
           <button
             key={id}

@@ -22,7 +22,21 @@ export class CommissionService {
     subscriptionId: string;
     planCode: string;
     priceLabel?: string | null;
+    priceAmount?: number | string | null;
   }) {
+    // Free trial / ₹0 plans never generate paid commission.
+    const planCode = String(input.planCode || '').toUpperCase();
+    if (planCode === 'TRIAL_10_DAYS') {
+      return null;
+    }
+    const amountFromPlan =
+      input.priceAmount != null && input.priceAmount !== ''
+        ? Number(input.priceAmount)
+        : parseMonthlyPriceLabel(input.priceLabel);
+    if (!Number.isFinite(amountFromPlan) || amountFromPlan <= 0) {
+      return null;
+    }
+
     const existing = await this.prisma.commission.findUnique({
       where: { subscriptionId: input.subscriptionId },
     });

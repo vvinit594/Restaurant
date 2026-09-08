@@ -137,6 +137,7 @@ export default function SalesAnalyticsPage() {
                     <tr>
                       <th>Restaurant</th>
                       <th>Plan</th>
+                      <th>Type</th>
                       <th>Price</th>
                       <th>Status</th>
                       <th>Started</th>
@@ -148,6 +149,7 @@ export default function SalesAnalyticsPage() {
                       <tr key={s.restaurantId}>
                         <td>{s.restaurantName}</td>
                         <td>{s.planName || '—'}</td>
+                        <td>{s.planType === 'FREE_TRIAL' ? 'Free Trial' : s.planType || '—'}</td>
                         <td>{s.priceLabel || '—'}</td>
                         <td>{s.status || '—'}</td>
                         <td>
