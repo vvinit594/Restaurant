@@ -28,10 +28,19 @@ enum MembershipRole {
 }
 
 enum SubscriptionStatus {
+  PENDING
   ACTIVE
   TRIAL
-  CANCELLED
   PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
 }
 
 enum QrCodeStatus {
@@ -185,6 +194,7 @@ model Restaurant {
   diningTables  DiningTable[]
   orders        Order[]
   commissions   Commission[]
+  payments      Payment[]
 
   @@index([createdByUserId])
   @@index([salesPersonId])
@@ -240,20 +250,75 @@ model SubscriptionPlan {
 }
 
 model Subscription {
-  id           String             @id @default(cuid())
-  restaurantId String
-  planId       String
-  status       SubscriptionStatus @default(ACTIVE)
-  startedAt    DateTime           @default(now())
-  endsAt       DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id                     String             @id @default(cuid())
+  restaurantId           String
+  planId                 String
+  status                 SubscriptionStatus @default(PENDING)
+  startedAt              DateTime           @default(now())
+  endsAt                 DateTime?
+  /// Razorpay / billing fields (never store card/UPI secrets)
+  razorpayCustomerId     String?
+  razorpaySubscriptionId String?            @unique
+  razorpayPlanId         String?
+  razorpayPaymentId      String?
+  razorpayTokenId        String?
+  paymentStatus          PaymentStatus      @default(PENDING)
+  paymentFailedAt        DateTime?
+  gracePeriodStartedAt   DateTime?
+  gracePeriodEndsAt      DateTime?
+  lastPaymentAt          DateTime?
+  nextPaymentAt          DateTime?
+  currency               String             @default("INR")
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   restaurant Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   plan       SubscriptionPlan @relation(fields: [planId], references: [id])
+  payments   Payment[]
 
   @@index([restaurantId])
+  @@index([status, gracePeriodEndsAt])
+  @@index([razorpayCustomerId])
   @@map("subscriptions")
+}
+
+model Payment {
+  id                     String        @id @default(cuid())
+  restaurantId           String
+  subscriptionId         String?
+  razorpayPaymentId      String?       @unique
+  razorpaySubscriptionId String?
+  razorpayOrderId        String?
+  planCode               String
+  amount                 Decimal       @db.Decimal(10, 2)
+  currency               String        @default("INR")
+  status                 PaymentStatus @default(PENDING)
+  method                 String?
+  failureReason          String?
+  paidAt                 DateTime?
+  rawPayload             Json?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, createdAt])
+  @@index([subscriptionId])
+  @@map("payments")
+}
+
+model RazorpayWebhookEvent {
+  id          String   @id @default(cuid())
+  /// Razorpay event id — unique for idempotency
+  eventId     String   @unique
+  eventType   String
+  payload     Json
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([eventType, processedAt])
+  @@map("razorpay_webhook_events")
 }
 
 model Branch {

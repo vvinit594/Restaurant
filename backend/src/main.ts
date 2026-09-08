@@ -81,7 +81,13 @@ async function bootstrap() {
 
   // Images go to Supabase Storage; JSON payloads only carry short URLs.
   // Phase 1: keep 1mb global — enough for auth/CRUD JSON; not for Base64 images.
-  app.use(json({ limit: '1mb' }));
+  // (Razorpay webhook raw body is captured on the outer Express server.)
+  app.use((req: Request & { rawBody?: Buffer }, res: Response, next: NextFunction) => {
+    if (req.originalUrl?.includes('/payments/razorpay/webhook') && req.rawBody) {
+      return next();
+    }
+    return json({ limit: '1mb' })(req, res, next);
+  });
   app.use(urlencoded({ extended: true, limit: '1mb' }));
 
   app.setGlobalPrefix('api/v1');
@@ -132,6 +138,23 @@ function ensureApp(): Promise<void> {
 
 // CORS must run before the bootstrap gate so preflight/503 always get headers.
 applyExpressCors(buildAllowedOrigins(process.env.FRONTEND_ORIGIN));
+
+// Capture raw body for Razorpay webhook signature verification (before Nest json parser).
+server.use(
+  '/api/v1/payments/razorpay/webhook',
+  express.raw({ type: 'application/json', limit: '2mb' }),
+  (req: Request & { rawBody?: Buffer }, _res, next: NextFunction) => {
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body;
+      try {
+        (req as any).body = JSON.parse(req.body.toString('utf8'));
+      } catch {
+        (req as any).body = {};
+      }
+    }
+    next();
+  },
+);
 
 // Gate every request until Nest is ready (fixes flaky 500/404 on cold start).
 server.use(async (req, res, next) => {

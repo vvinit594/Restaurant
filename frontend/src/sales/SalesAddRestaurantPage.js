@@ -6,6 +6,7 @@ import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { slugify } from '../services/adminStorage';
 import { createSalesRestaurant, getSalesPlans } from '../services/salesApi';
+import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
 import { useToast } from '../admin/components/Toast';
 
 const INITIAL = {
@@ -116,7 +117,21 @@ export default function SalesAddRestaurantPage() {
         subscriptionPlanId: form.subscriptionPlanId,
       });
 
-      push(result.message || 'Restaurant added successfully.');
+      if (result.checkout?.subscriptionId) {
+        push('Restaurant added. Opening Razorpay Checkout…');
+        const payResult = await openRazorpaySubscriptionCheckout(result.checkout);
+        if (payResult.success) {
+          push('Payment authorized. Subscription activates after Razorpay confirmation.');
+        } else {
+          push(
+            payResult.error ||
+              'Checkout not completed. Retry from restaurant billing later.',
+            'error',
+          );
+        }
+      } else {
+        push(result.message || 'Restaurant added successfully.');
+      }
       navigate('/sales/restaurants');
     } catch (err) {
       push(err.message || 'Could not add restaurant.', 'error');

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useRestaurantAuth } from './auth/RestaurantAuthContext';
+import RestaurantBillingBanner from './RestaurantBillingBanner';
 
 export default function RestaurantLayout() {
   const { user, permissions, logout } = useRestaurantAuth();
@@ -131,6 +132,7 @@ export default function RestaurantLayout() {
           </div>
         </header>
         <main className="admin-content">
+          <RestaurantBillingBanner />
           <Outlet />
         </main>
       </div>

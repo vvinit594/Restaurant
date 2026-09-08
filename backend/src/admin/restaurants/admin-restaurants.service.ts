@@ -1,11 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
+  forwardRef,
 } from '@nestjs/common';
 import {
   MembershipRole,
+  PaymentStatus,
   Prisma,
   QrCodeStatus,
   RestaurantStatus,
@@ -22,6 +26,7 @@ import {
   isPaymentRequiredForPlan,
   isSubscriptionPeriodActive,
 } from '../../common/subscription-plans';
+import { PaymentsService } from '../../payments/payments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QrService } from '../../qr/qr.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
@@ -30,6 +35,9 @@ import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 const LIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.ACTIVE,
   SubscriptionStatus.TRIAL,
+  SubscriptionStatus.PENDING,
+  SubscriptionStatus.PAST_DUE,
+  SubscriptionStatus.SUSPENDED,
 ];
 
 const OWNER_INCLUDE = {
@@ -68,6 +76,9 @@ export class AdminRestaurantsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly qrService: QrService,
+    @Optional()
+    @Inject(forwardRef(() => PaymentsService))
+    private readonly paymentsService?: PaymentsService,
   ) {}
 
   async list(query: { search?: string; status?: string } = {}) {
@@ -256,13 +267,22 @@ export class AdminRestaurantsService {
       plan.paymentRequired ??
       planConfig?.paymentRequired ??
       isPaymentRequiredForPlan(plan.code);
-    const subscriptionStatus =
-      plan.planType === 'FREE_TRIAL' || planConfig?.planType === 'FREE_TRIAL'
-        ? ('TRIAL' as const)
-        : ('ACTIVE' as const);
 
-    // Trusted plan config only — never create a paid checkout for ₹0 / free trial.
-    void paymentRequired;
+    const isTrial =
+      plan.planType === 'FREE_TRIAL' || planConfig?.planType === 'FREE_TRIAL';
+
+    const subscriptionStatus = isTrial
+      ? SubscriptionStatus.TRIAL
+      : paymentRequired
+        ? SubscriptionStatus.PENDING
+        : SubscriptionStatus.ACTIVE;
+
+    const paymentStatus = isTrial || !paymentRequired
+      ? PaymentStatus.PAID
+      : PaymentStatus.PENDING;
+
+    // Paid plans: endsAt set after Razorpay confirmation; trial uses computed endsAt.
+    const subscriptionEndsAt = isTrial ? endsAt : paymentRequired ? null : endsAt;
 
     const passwordHash = await bcrypt.hash(password, 12);
     const coverImageUrl =
@@ -315,8 +335,9 @@ export class AdminRestaurantsService {
             restaurantId: restaurant.id,
             planId: plan.id,
             status: subscriptionStatus,
+            paymentStatus,
             startedAt,
-            endsAt,
+            endsAt: subscriptionEndsAt,
           },
         });
 
@@ -409,8 +430,35 @@ export class AdminRestaurantsService {
       leadId: pendingLead?.id || null,
     });
 
+    let checkout: Awaited<
+      ReturnType<PaymentsService['startPaidCheckout']>
+    > | null = null;
+    const needsPayment =
+      paymentRequired &&
+      !isTrial &&
+      isPaymentRequiredForPlan(plan.code);
+
+    if (needsPayment && this.paymentsService) {
+      try {
+        checkout = await this.paymentsService.startPaidCheckout(
+          created.subscription.id,
+        );
+      } catch (err) {
+        // Restaurant exists; payment can be retried from Admin/Restaurant billing UI.
+        auditLog('RAZORPAY_CHECKOUT_START_FAILED', {
+          restaurantId: created.restaurant.id,
+          subscriptionId: created.subscription.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     return {
-      message: 'Restaurant created successfully',
+      message: needsPayment
+        ? checkout
+          ? 'Restaurant created. Complete Razorpay Checkout to activate the paid subscription.'
+          : 'Restaurant created. Paid subscription is pending — open billing to start Razorpay Checkout.'
+        : 'Restaurant created successfully',
       restaurant: {
         id: created.restaurant.id,
         name: created.restaurant.name,
@@ -430,6 +478,7 @@ export class AdminRestaurantsService {
         id: created.subscription.id,
         planCode: created.planCode,
         status: created.subscription.status,
+        paymentStatus: created.subscription.paymentStatus,
         startedAt: created.subscription.startedAt?.toISOString?.()
           ? created.subscription.startedAt.toISOString()
           : created.subscription.startedAt,
@@ -441,9 +490,9 @@ export class AdminRestaurantsService {
         billingDays: plan.billingDays,
         branchLimit: plan.branchLimit,
         planType: plan.planType,
-        paymentRequired:
-          plan.paymentRequired ?? isPaymentRequiredForPlan(plan.code),
+        paymentRequired: needsPayment,
       },
+      checkout,
       leadId: pendingLead?.id || null,
     };
   }
@@ -760,7 +809,7 @@ export class AdminRestaurantsService {
       !isSubscriptionPeriodActive(sub.status, sub.endsAt)
     ) {
       throw new BadRequestException(
-        'No active subscription. Choose a paid plan or renew to add branches.',
+        'No active subscription. Complete payment or renew to add branches.',
       );
     }
     const limit = sub.plan?.branchLimit ?? 5;
@@ -953,8 +1002,15 @@ export class AdminRestaurantsService {
       subscription: sub
         ? {
             status: sub.status || null,
+            paymentStatus: (sub as any).paymentStatus || null,
             startedAt: sub.startedAt?.toISOString?.() || null,
             endsAt: sub.endsAt?.toISOString?.() || null,
+            nextPaymentAt: (sub as any).nextPaymentAt?.toISOString?.() || null,
+            lastPaymentAt: (sub as any).lastPaymentAt?.toISOString?.() || null,
+            gracePeriodEndsAt:
+              (sub as any).gracePeriodEndsAt?.toISOString?.() || null,
+            razorpaySubscriptionId:
+              (sub as any).razorpaySubscriptionId || null,
           }
         : null,
       admin: owner

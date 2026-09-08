@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module';
 import { AdminRestaurantsModule } from './admin/restaurants/admin-restaurants.module';
 import { MediaModule } from './media/media.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PublicRestaurantsModule } from './public/restaurants/public-restaurants.module';
 import { QrModule } from './qr/qr.module';
@@ -27,6 +28,7 @@ import { UsersModule } from './users/users.module';
     MediaModule,
     OrdersModule,
     SalesModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

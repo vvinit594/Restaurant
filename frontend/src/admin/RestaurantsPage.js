@@ -187,7 +187,32 @@ export default function RestaurantsPage() {
                       <div className="admin-cell-sub">{r.salesPerson.name}</div>
                     ) : null}
                   </td>
-                  <td>{r.subscriptionPlan?.name || '—'}</td>
+                  <td>
+                    <div>{r.subscriptionPlan?.name || '—'}</div>
+                    {r.subscription?.status ? (
+                      <div className="admin-cell-sub">
+                        {r.subscription.status}
+                        {r.subscription.paymentStatus
+                          ? ` · ${r.subscription.paymentStatus}`
+                          : ''}
+                      </div>
+                    ) : null}
+                    {r.subscriptionPlan?.priceLabel ? (
+                      <div className="admin-cell-sub">{r.subscriptionPlan.priceLabel}</div>
+                    ) : null}
+                    {r.subscription?.nextPaymentAt ? (
+                      <div className="admin-cell-sub">
+                        Next: {new Date(r.subscription.nextPaymentAt).toLocaleDateString()}
+                      </div>
+                    ) : null}
+                    {r.subscription?.gracePeriodEndsAt &&
+                    String(r.subscription.status).toUpperCase() === 'PAST_DUE' ? (
+                      <div className="admin-cell-sub">
+                        Grace until:{' '}
+                        {new Date(r.subscription.gracePeriodEndsAt).toLocaleString()}
+                      </div>
+                    ) : null}
+                  </td>
                   <td><StatusBadge status={r.status} /></td>
                   <td>{formatDate(r.createdAt)}</td>
                   <td>

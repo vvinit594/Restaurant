@@ -141,7 +141,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
-    if (membership.restaurant.status !== RestaurantStatus.ACTIVE) {
+    if (membership.restaurant.status === RestaurantStatus.ARCHIVED) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    // Allow SUSPENDED login so owners can complete payment / see billing.
+    if (
+      membership.restaurant.status !== RestaurantStatus.ACTIVE &&
+      membership.restaurant.status !== RestaurantStatus.SUSPENDED
+    ) {
       throw new UnauthorizedException(
         'This restaurant is not active. Contact DilYum support.',
       );
@@ -158,6 +166,7 @@ export class AuthService {
       email: safeUser.email,
       restaurantId: membership.restaurantId,
       membershipRole: membership.role,
+      restaurantStatus: membership.restaurant.status,
     });
 
     return {
@@ -172,6 +181,7 @@ export class AuthService {
         id: membership.restaurant.id,
         name: membership.restaurant.name,
         slug: membership.restaurant.slug,
+        status: membership.restaurant.status,
       },
     };
   }

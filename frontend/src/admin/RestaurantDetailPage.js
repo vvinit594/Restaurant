@@ -9,6 +9,11 @@ import {
   suspendRestaurant,
   updateRestaurant,
 } from '../services/restaurantsApi';
+import {
+  getAdminRestaurantBilling,
+  startAdminRestaurantCheckout,
+} from '../services/paymentsApi';
+import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
 import { slugify } from '../services/adminStorage';
 import ConfirmDialog from './components/ConfirmDialog';
 import StatusBadge from './components/StatusBadge';
@@ -22,12 +27,14 @@ export default function RestaurantDetailPage() {
   const { push } = useToast();
 
   const [restaurant, setRestaurant] = useState(null);
+  const [billing, setBilling] = useState(null);
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
 
@@ -55,6 +62,9 @@ export default function RestaurantDetailPage() {
       });
       setLogoFile(null);
       setCoverFile(null);
+      getAdminRestaurantBilling(restaurantId)
+        .then(setBilling)
+        .catch(() => setBilling(null));
     } catch (err) {
       setError(err.message || 'Failed to load restaurant.');
     } finally {
@@ -259,6 +269,23 @@ export default function RestaurantDetailPage() {
               <div><dt>Email</dt><dd>{restaurant.email}</dd></div>
               <div><dt>Status</dt><dd><StatusBadge status={restaurant.status} /></dd></div>
               <div><dt>Subscription</dt><dd>{restaurant.subscriptionPlan?.name} ({restaurant.subscriptionPlan?.priceLabel})</dd></div>
+              {restaurant.subscription?.status ? (
+                <div>
+                  <dt>Subscription status</dt>
+                  <dd>
+                    {restaurant.subscription.status}
+                    {restaurant.subscription.paymentStatus
+                      ? ` · ${restaurant.subscription.paymentStatus}`
+                      : ''}
+                  </dd>
+                </div>
+              ) : null}
+              {restaurant.subscription?.nextPaymentAt ? (
+                <div>
+                  <dt>Next payment</dt>
+                  <dd>{new Date(restaurant.subscription.nextPaymentAt).toLocaleString()}</dd>
+                </div>
+              ) : null}
               {restaurant.subscription?.startedAt ? (
                 <div>
                   <dt>Subscription period</dt>
@@ -267,6 +294,52 @@ export default function RestaurantDetailPage() {
                     {restaurant.subscription.endsAt
                       ? ` → ${new Date(restaurant.subscription.endsAt).toLocaleDateString()}`
                       : ''}
+                  </dd>
+                </div>
+              ) : null}
+              {billing?.checkoutAvailable ? (
+                <div>
+                  <dt>Payment</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-primary"
+                      disabled={payBusy}
+                      onClick={async () => {
+                        setPayBusy(true);
+                        try {
+                          const checkout = await startAdminRestaurantCheckout(restaurantId);
+                          const result = await openRazorpaySubscriptionCheckout(checkout);
+                          if (result.success) {
+                            push('Payment authorized. Waiting for Razorpay webhook confirmation.');
+                            load();
+                          } else {
+                            push(result.error || 'Checkout not completed.', 'error');
+                          }
+                        } catch (err) {
+                          push(err.message || 'Could not start checkout.', 'error');
+                        } finally {
+                          setPayBusy(false);
+                        }
+                      }}
+                    >
+                      {payBusy ? 'Opening…' : 'Retry / Start Razorpay Checkout'}
+                    </button>
+                  </dd>
+                </div>
+              ) : null}
+              {billing?.payments?.length ? (
+                <div>
+                  <dt>Recent payments</dt>
+                  <dd>
+                    {billing.payments.slice(0, 5).map((p) => (
+                      <div key={p.id} className="admin-cell-sub">
+                        {p.status} · ₹{p.amount} ·{' '}
+                        {p.paidAt
+                          ? new Date(p.paidAt).toLocaleString()
+                          : new Date(p.createdAt).toLocaleString()}
+                      </div>
+                    ))}
                   </dd>
                 </div>
               ) : null}

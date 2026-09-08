@@ -91,17 +91,23 @@ export class SalesService {
     );
 
     if (created.subscription?.id && created.restaurant?.id) {
-      const plan = await this.prisma.subscriptionPlan.findFirst({
-        where: { code: created.subscription.planCode },
-      });
-      await this.commissionService.ensureCommissionForSubscription({
-        salesPersonId: sp.id,
-        restaurantId: created.restaurant.id,
-        subscriptionId: created.subscription.id,
-        planCode: created.subscription.planCode,
-        priceLabel: plan?.priceLabel,
-        priceAmount: plan?.priceAmount != null ? Number(plan.priceAmount) : null,
-      });
+      // Paid commission is created only after Razorpay payment confirmation (webhook).
+      // Free trial never generates commission.
+      const planCode = String(created.subscription.planCode || '').toUpperCase();
+      const paymentRequired = created.subscription.paymentRequired === true;
+      if (!paymentRequired && planCode !== 'TRIAL_10_DAYS') {
+        const plan = await this.prisma.subscriptionPlan.findFirst({
+          where: { code: planCode },
+        });
+        await this.commissionService.ensureCommissionForSubscription({
+          salesPersonId: sp.id,
+          restaurantId: created.restaurant.id,
+          subscriptionId: created.subscription.id,
+          planCode,
+          priceLabel: plan?.priceLabel,
+          priceAmount: plan?.priceAmount != null ? Number(plan.priceAmount) : null,
+        });
+      }
     }
 
     auditLog('SALES_RESTAURANT_CREATED', {

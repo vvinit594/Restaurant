@@ -16,6 +16,7 @@ export type RestaurantContext = {
   membershipRole: MembershipRole;
   restaurantName: string;
   restaurantSlug: string;
+  restaurantStatus: RestaurantStatus;
 };
 
 const MEMBERSHIP_WITH_RESTAURANT = {
@@ -34,15 +35,15 @@ const MEMBERSHIP_WITH_RESTAURANT = {
 export class RestaurantContextService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async requireActiveMembership(
+  async requireMembership(
     user: { id: string; role: UserRole; restaurantId?: string },
     allowedRoles?: MembershipRole[],
+    opts?: { allowSuspended?: boolean },
   ): Promise<RestaurantContext> {
     if (!user?.id) {
       throw new UnauthorizedException('Authentication required.');
     }
 
-    // Prefer JWT restaurantId, but fall back to any active membership (stale claim).
     let membership = await this.prisma.restaurantMembership.findFirst({
       where: {
         userId: user.id,
@@ -69,10 +70,23 @@ export class RestaurantContextService {
       });
     }
 
+    if (!membership || membership.restaurant.deletedAt) {
+      throw new ForbiddenException('No active restaurant membership found.');
+    }
+
+    const status = membership.restaurant.status;
+    const allowSuspended = opts?.allowSuspended === true;
+    if (status === RestaurantStatus.ARCHIVED) {
+      throw new ForbiddenException('No active restaurant membership found.');
+    }
+    if (status === RestaurantStatus.SUSPENDED && !allowSuspended) {
+      throw new ForbiddenException(
+        'Your restaurant is suspended. Complete payment or contact DilYum support.',
+      );
+    }
     if (
-      !membership ||
-      membership.restaurant.deletedAt ||
-      membership.restaurant.status !== RestaurantStatus.ACTIVE
+      status !== RestaurantStatus.ACTIVE &&
+      !(allowSuspended && status === RestaurantStatus.SUSPENDED)
     ) {
       throw new ForbiddenException('No active restaurant membership found.');
     }
@@ -87,6 +101,14 @@ export class RestaurantContextService {
       membershipRole: membership.role,
       restaurantName: membership.restaurant.name,
       restaurantSlug: membership.restaurant.slug,
+      restaurantStatus: status,
     };
+  }
+
+  async requireActiveMembership(
+    user: { id: string; role: UserRole; restaurantId?: string },
+    allowedRoles?: MembershipRole[],
+  ): Promise<RestaurantContext> {
+    return this.requireMembership(user, allowedRoles, { allowSuspended: false });
   }
 }

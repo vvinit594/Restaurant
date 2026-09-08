@@ -142,7 +142,25 @@ export function isPaymentRequiredForPlan(code: string): boolean {
   return config.paymentRequired !== false && Number(config.priceAmount) > 0;
 }
 
-/** Subscription is currently usable (not expired). */
+/** Map DilYum plan → Razorpay Plan ID from trusted env (never from client). */
+export function getRazorpayPlanIdFromEnv(
+  code: string,
+  env: {
+    RAZORPAY_MONTHLY_PLAN_ID?: string;
+    RAZORPAY_LAUNCH_PLAN_ID?: string;
+  },
+): string | null {
+  const key = normalizePlanCode(code);
+  if (key === 'MONTHLY') {
+    return String(env.RAZORPAY_MONTHLY_PLAN_ID || '').trim() || null;
+  }
+  if (key === 'LAUNCH') {
+    return String(env.RAZORPAY_LAUNCH_PLAN_ID || '').trim() || null;
+  }
+  return null;
+}
+
+/** Subscription is currently usable (not expired / pending payment). */
 export function isSubscriptionPeriodActive(
   status: string,
   endsAt: Date | string | null | undefined,
@@ -151,4 +169,10 @@ export function isSubscriptionPeriodActive(
   if (status !== 'ACTIVE' && status !== 'TRIAL') return false;
   if (!endsAt) return true;
   return new Date(endsAt).getTime() > now.getTime();
+}
+
+export function addGraceHours(date: Date, hours: number): Date {
+  const d = new Date(date);
+  d.setHours(d.getHours() + hours);
+  return d;
 }

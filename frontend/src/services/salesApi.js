@@ -75,11 +75,20 @@ export async function createSalesRestaurant(payload) {
     subscriptionPlan: String(plan).toUpperCase(),
   };
 
-  return apiRequest('/sales/restaurants', {
+  const result = await apiRequest('/sales/restaurants', {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
+
+  return {
+    ...result,
+    id: result.restaurant?.id || result.id,
+    name: result.restaurant?.name || result.name,
+    checkout: result.checkout || null,
+    subscription: result.subscription || null,
+    message: result.message,
+  };
 }
 
 export async function getSalesQr() {

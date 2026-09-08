@@ -109,6 +109,8 @@ export async function createRestaurant(payload) {
     ...result.restaurant,
     owner: result.owner,
     message: result.message,
+    subscription: result.subscription || null,
+    checkout: result.checkout || null,
   };
 }
 

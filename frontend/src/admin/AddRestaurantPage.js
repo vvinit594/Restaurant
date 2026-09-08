@@ -5,6 +5,7 @@ import SubscriptionPlanCards from '../components/SubscriptionPlanCards';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { createRestaurant, getSubscriptionPlans } from '../services/restaurantsApi';
+import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
 import { slugify } from '../services/adminStorage';
 import { useToast } from './components/Toast';
 
@@ -147,11 +148,30 @@ export default function AddRestaurantPage() {
         salesPersonId: leadContext?.salesPersonId || undefined,
         leadId: leadContext?.leadId || undefined,
       });
-      push(
-        leadContext
-          ? `Restaurant “${created.name}” created from lead and linked to ${leadContext.salesCode}.`
-          : `Restaurant “${created.name}” created successfully.`,
-      );
+
+      if (created.checkout?.subscriptionId) {
+        push(
+          `Restaurant “${created.name}” created. Opening Razorpay Checkout for ${created.checkout.planName || 'subscription'}…`,
+        );
+        const payResult = await openRazorpaySubscriptionCheckout(created.checkout);
+        if (payResult.success) {
+          push(
+            'Payment authorized. Subscription will activate after Razorpay confirmation.',
+          );
+        } else {
+          push(
+            payResult.error ||
+              'Checkout was not completed. You can retry payment from the restaurant billing page.',
+            'error',
+          );
+        }
+      } else {
+        push(
+          leadContext
+            ? `Restaurant “${created.name}” created from lead and linked to ${leadContext.salesCode}.`
+            : created.message || `Restaurant “${created.name}” created successfully.`,
+        );
+      }
       navigate(`/admin/restaurants/${created.id}`, { replace: true });
     } catch (err) {
       const detail = err.message || 'Could not create restaurant.';
