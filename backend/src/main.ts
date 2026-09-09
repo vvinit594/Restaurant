@@ -13,9 +13,6 @@ loadEnv();
 
 const server = express();
 
-let appInitialized = false;
-let bootPromise: Promise<void> | null = null;
-
 const DEFAULT_ORIGINS = [
   'http://localhost:3000',
   'https://dilyum.live',
@@ -35,9 +32,9 @@ function buildAllowedOrigins(frontendOriginEnv?: string) {
 }
 
 /**
- * Apply CORS on the raw Express app before Nest boots / handles the request.
- * Ensures OPTIONS preflight and error responses (incl. cold-start 503) always
- * carry Access-Control-Allow-Origin for allowed frontends — never '*'.
+ * Apply CORS on the raw Express app before Nest handles the request.
+ * Ensures OPTIONS preflight and early error responses always carry
+ * Access-Control-Allow-Origin for allowed frontends — never '*'.
  */
 function applyExpressCors(allowedOrigins: string[]) {
   server.use((req: Request, res: Response, next: NextFunction) => {
@@ -69,6 +66,30 @@ function applyExpressCors(allowedOrigins: string[]) {
   });
 }
 
+applyExpressCors(buildAllowedOrigins(process.env.FRONTEND_ORIGIN));
+
+// Capture raw body for Razorpay webhook signature verification (before Nest json parser).
+server.use(
+  '/api/v1/payments/razorpay/webhook',
+  express.raw({ type: 'application/json', limit: '2mb' }),
+  (req: Request & { rawBody?: Buffer }, _res, next: NextFunction) => {
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body;
+      try {
+        (req as any).body = JSON.parse(req.body.toString('utf8'));
+      } catch {
+        (req as any).body = {};
+      }
+    }
+    next();
+  },
+);
+
+/**
+ * Vercel NestJS zero-config expects a conventional bootstrap() that calls
+ * app.listen(). Skipping listen when VERCEL is set causes FUNCTION_INVOCATION_FAILED
+ * (browsers surface that as a CORS preflight failure).
+ */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     bodyParser: false,
@@ -80,8 +101,6 @@ async function bootstrap() {
   );
 
   // Images go to Supabase Storage; JSON payloads only carry short URLs.
-  // Phase 1: keep 1mb global — enough for auth/CRUD JSON; not for Base64 images.
-  // (Razorpay webhook raw body is captured on the outer Express server.)
   app.use((req: Request & { rawBody?: Buffer }, res: Response, next: NextFunction) => {
     if (req.originalUrl?.includes('/payments/razorpay/webhook') && req.rawBody) {
       return next();
@@ -119,67 +138,18 @@ async function bootstrap() {
     allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
   });
 
-  await app.init();
-  appInitialized = true;
+  const port = Number(process.env.PORT ?? 3001);
+  await app.listen(port);
+
+  if (!process.env.VERCEL) {
+    console.log(`DilYum API listening on http://localhost:${port}/api/v1`);
+  }
 }
 
-/** Single-flight Nest init — required for Vercel cold starts. */
-function ensureApp(): Promise<void> {
-  if (appInitialized) return Promise.resolve();
-  if (!bootPromise) {
-    bootPromise = bootstrap().catch((err) => {
-      bootPromise = null;
-      appInitialized = false;
-      throw err;
-    });
-  }
-  return bootPromise;
-}
-
-// CORS must run before the bootstrap gate so preflight/503 always get headers.
-applyExpressCors(buildAllowedOrigins(process.env.FRONTEND_ORIGIN));
-
-// Capture raw body for Razorpay webhook signature verification (before Nest json parser).
-server.use(
-  '/api/v1/payments/razorpay/webhook',
-  express.raw({ type: 'application/json', limit: '2mb' }),
-  (req: Request & { rawBody?: Buffer }, _res, next: NextFunction) => {
-    if (Buffer.isBuffer(req.body)) {
-      req.rawBody = req.body;
-      try {
-        (req as any).body = JSON.parse(req.body.toString('utf8'));
-      } catch {
-        (req as any).body = {};
-      }
-    }
-    next();
-  },
-);
-
-// Gate every request until Nest is ready (fixes flaky 500/404 on cold start).
-server.use(async (req, res, next) => {
-  try {
-    await ensureApp();
-    next();
-  } catch (err) {
-    console.error('Nest bootstrap failed:', err);
-    // CORS headers already set by applyExpressCors when Origin is allowed.
-    res.status(503).json({
-      statusCode: 503,
-      message: 'API is starting up. Retry in a moment.',
-    });
-  }
+bootstrap().catch((err) => {
+  console.error('Nest bootstrap failed:', err);
+  process.exit(1);
 });
 
-// Export the Express server for Vercel.
+// Keep Express instance export for older @vercel/node routing setups.
 export default server;
-
-// Local development only.
-if (!process.env.VERCEL) {
-  ensureApp().then(() => {
-    const port = Number(process.env.PORT || 3001);
-    server.listen(port, () => {
-      console.log(`DilYum API listening on http://localhost:${port}/api/v1`);
-    });
-  });
-}
