@@ -24,6 +24,7 @@ import DishFormPage from './restaurant/DishFormPage';
 import BulkDishesAddPage from './restaurant/BulkDishesAddPage';
 import RestaurantPlaceholder from './restaurant/RestaurantPlaceholder';
 import RestaurantProfilePage from './restaurant/RestaurantProfilePage';
+import RestaurantLoyaltyPage from './restaurant/RestaurantLoyaltyPage';
 import RestaurantQrPage from './restaurant/RestaurantQrPage';
 import RestaurantLiveOrdersPage from './restaurant/RestaurantLiveOrdersPage';
 import RestaurantOrderHistoryPage from './restaurant/RestaurantOrderHistoryPage';
@@ -108,6 +109,14 @@ export default function AppRouter() {
               >
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<RestaurantDashboard />} />
+                <Route
+                  path="loyalty"
+                  element={
+                    <ProtectedRestaurantRoute permission="viewLoyalty">
+                      <RestaurantLoyaltyPage />
+                    </ProtectedRestaurantRoute>
+                  }
+                />
                 <Route
                   path="orders"
                   element={

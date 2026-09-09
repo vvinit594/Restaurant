@@ -21,6 +21,7 @@ export default function RestaurantLayout() {
 
   const nav = [
     { to: '/restaurant/dashboard', label: 'Dashboard', end: true, show: true, group: 'overview' },
+    { to: '/restaurant/loyalty', label: 'Loyalty Program', end: true, show: permissions?.viewLoyalty, group: 'overview' },
     { to: '/restaurant/orders', label: 'Live Orders', end: true, show: permissions?.viewOrders, group: 'orders' },
     { to: '/restaurant/orders/history', label: 'Order History', show: permissions?.viewOrders, group: 'orders' },
     { to: '/restaurant/profile', label: 'Restaurant Profile', show: permissions?.manageProfile, group: 'restaurant' },

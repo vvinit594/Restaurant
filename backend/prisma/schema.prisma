@@ -74,6 +74,37 @@ enum CommissionRuleType {
   PERCENT
 }
 
+enum LoyaltyCustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LoyaltyOfferType {
+  COUPON
+  DISCOUNT
+  SPECIAL_OFFER
+  CUSTOM_MESSAGE
+}
+
+enum LoyaltyOfferStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum LoyaltyProgramType {
+  POINTS
+  STAMP_CARD
+  MEMBERSHIP_TIERS
+  BIRTHDAY_REWARD
+  REFER_EARN
+  CASHBACK
+  EXCLUSIVE_OFFERS
+  ORDER_STREAK
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -88,6 +119,8 @@ model User {
   memberships           RestaurantMembership[]
   restaurantsCreated    Restaurant[]           @relation("RestaurantCreatedBy")
   salesProfile          SalesPerson?
+  loyaltyCustomers      LoyaltyCustomer[]      @relation("LoyaltyCustomerCreatedBy")
+  loyaltyOffersSent     LoyaltyOfferMessage[]  @relation("LoyaltyOfferSentBy")
 
   @@map("users")
 }
@@ -195,6 +228,9 @@ model Restaurant {
   orders        Order[]
   commissions   Commission[]
   payments      Payment[]
+  loyaltyCustomers LoyaltyCustomer[]
+  loyaltyOffers    LoyaltyOfferMessage[]
+  loyaltyPrograms  RestaurantLoyaltyProgram[]
 
   @@index([createdByUserId])
   @@index([salesPersonId])
@@ -319,6 +355,80 @@ model RazorpayWebhookEvent {
 
   @@index([eventType, processedAt])
   @@map("razorpay_webhook_events")
+}
+
+model LoyaltyCustomer {
+  id                String                @id @default(cuid())
+  restaurantId      String
+  name              String
+  phone             String
+  whatsappPhone     String
+  email             String?
+  notes             String?
+  marketingConsent  Boolean               @default(false)
+  status            LoyaltyCustomerStatus @default(ACTIVE)
+  totalOffersSent   Int                   @default(0)
+  lastOfferSentAt   DateTime?
+  createdByUserId   String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  restaurant  Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  createdBy   User?                 @relation("LoyaltyCustomerCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  offers      LoyaltyOfferMessage[]
+
+  @@unique([restaurantId, phone])
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, lastOfferSentAt])
+  @@map("loyalty_customers")
+}
+
+model LoyaltyOfferMessage {
+  id                String             @id @default(cuid())
+  restaurantId      String
+  customerId        String
+  offerType         LoyaltyOfferType
+  title             String?
+  message           String
+  couponCode        String?
+  discountPercent   Decimal?           @db.Decimal(5, 2)
+  minimumOrderValue Decimal?           @db.Decimal(10, 2)
+  expiresAt         DateTime?
+  providerMessageId String?
+  status            LoyaltyOfferStatus @default(PENDING)
+  sentByUserId      String?
+  sentAt            DateTime?
+  providerPayload   Json?
+  failureReason     String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  restaurant Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   LoyaltyCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sentBy     User?           @relation("LoyaltyOfferSentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, customerId, createdAt])
+  @@index([restaurantId, status, createdAt])
+  @@index([customerId, createdAt])
+  @@map("loyalty_offer_messages")
+}
+
+model RestaurantLoyaltyProgram {
+  id          String             @id @default(cuid())
+  restaurantId String
+  programType LoyaltyProgramType
+  enabled     Boolean            @default(false)
+  configuration Json
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, programType])
+  @@index([restaurantId, enabled])
+  @@map("restaurant_loyalty_programs")
 }
 
 model Branch {
