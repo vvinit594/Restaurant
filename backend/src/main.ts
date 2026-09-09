@@ -185,10 +185,11 @@ server.use(async (req, res, next) => {
 module.exports = server;
 export default server;
 
-// Local development: boot immediately.
-if (!process.env.VERCEL) {
-  ensureApp().catch((err) => {
-    console.error('Nest bootstrap failed:', err);
+// Always bootstrap — Vercel NestJS zero-config expects listen during startup.
+// Do not exit the process on Vercel: keep the Express export alive for CORS/503.
+ensureApp().catch((err) => {
+  console.error('Nest bootstrap failed:', err);
+  if (!process.env.VERCEL) {
     process.exit(1);
-  });
-}
+  }
+});
