@@ -6,12 +6,13 @@ import { json, urlencoded, type Request, type Response, type NextFunction } from
 import express from 'express';
 import { config as loadEnv } from 'dotenv';
 
-import { AppModule } from './app.module';
-
 // Local .env before reading FRONTEND_ORIGIN for early CORS.
 loadEnv();
 
 const server = express();
+
+let appInitialized = false;
+let bootPromise: Promise<void> | null = null;
 
 const DEFAULT_ORIGINS = [
   'http://localhost:3000',
@@ -32,9 +33,9 @@ function buildAllowedOrigins(frontendOriginEnv?: string) {
 }
 
 /**
- * Apply CORS on the raw Express app before Nest handles the request.
- * Ensures OPTIONS preflight and early error responses always carry
- * Access-Control-Allow-Origin for allowed frontends — never '*'.
+ * Apply CORS on the raw Express app before Nest is imported / boots.
+ * OPTIONS preflight must succeed even when Nest/Prisma fails to load —
+ * otherwise browsers report a misleading CORS error instead of the real 5xx.
  */
 function applyExpressCors(allowedOrigins: string[]) {
   server.use((req: Request, res: Response, next: NextFunction) => {
@@ -85,12 +86,10 @@ server.use(
   },
 );
 
-/**
- * Vercel NestJS zero-config expects a conventional bootstrap() that calls
- * app.listen(). Skipping listen when VERCEL is set causes FUNCTION_INVOCATION_FAILED
- * (browsers surface that as a CORS preflight failure).
- */
 async function bootstrap() {
+  // Lazy-load Nest so Express CORS is registered even if AppModule/Prisma crashes.
+  const { AppModule } = await import('./app.module.js');
+
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
     bodyParser: false,
   });
@@ -100,7 +99,6 @@ async function bootstrap() {
     config.get<string>('FRONTEND_ORIGIN'),
   );
 
-  // Images go to Supabase Storage; JSON payloads only carry short URLs.
   app.use((req: Request & { rawBody?: Buffer }, res: Response, next: NextFunction) => {
     if (req.originalUrl?.includes('/payments/razorpay/webhook') && req.rawBody) {
       return next();
@@ -138,18 +136,59 @@ async function bootstrap() {
     allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
   });
 
-  const port = Number(process.env.PORT ?? 3001);
-  await app.listen(port);
+  await app.init();
 
-  if (!process.env.VERCEL) {
-    console.log(`DilYum API listening on http://localhost:${port}/api/v1`);
+  const port = Number(process.env.PORT ?? 3001);
+
+  // Vercel NestJS zero-config expects listen(); classic @vercel/node uses the
+  // exported Express app and may reject listen — try listen, never abort export.
+  try {
+    await app.listen(port);
+    if (!process.env.VERCEL) {
+      console.log(`DilYum API listening on http://localhost:${port}/api/v1`);
+    }
+  } catch (err) {
+    console.warn('app.listen unavailable; serving via exported Express app.', err);
   }
+
+  appInitialized = true;
 }
 
-bootstrap().catch((err) => {
-  console.error('Nest bootstrap failed:', err);
-  process.exit(1);
+/** Single-flight Nest init — required for Vercel cold starts. */
+function ensureApp(): Promise<void> {
+  if (appInitialized) return Promise.resolve();
+  if (!bootPromise) {
+    bootPromise = bootstrap().catch((err) => {
+      bootPromise = null;
+      appInitialized = false;
+      throw err;
+    });
+  }
+  return bootPromise;
+}
+
+// Gate every non-OPTIONS request until Nest is ready.
+server.use(async (req, res, next) => {
+  try {
+    await ensureApp();
+    next();
+  } catch (err) {
+    console.error('Nest bootstrap failed:', err);
+    res.status(503).json({
+      statusCode: 503,
+      message: 'API is starting up. Retry in a moment.',
+    });
+  }
 });
 
-// Keep Express instance export for older @vercel/node routing setups.
+// CommonJS default for @vercel/node (Nest/TS `export default` alone is not enough).
+module.exports = server;
 export default server;
+
+// Local development: boot immediately.
+if (!process.env.VERCEL) {
+  ensureApp().catch((err) => {
+    console.error('Nest bootstrap failed:', err);
+    process.exit(1);
+  });
+}

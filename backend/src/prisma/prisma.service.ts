@@ -7,7 +7,12 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   async onModuleInit() {
-    await this.$connect();
+    try {
+      await this.$connect();
+    } catch (err) {
+      // Do not crash the whole serverless function on a transient DB connect failure.
+      console.error('Prisma $connect failed during bootstrap:', err);
+    }
   }
 
   async onModuleDestroy() {
