@@ -1,21 +1,18 @@
 {
-  "version": 2,
+  "framework": null,
   "buildCommand": "npm run build",
   "installCommand": "npm install",
-  "builds": [
+  "rewrites": [
     {
-      "src": "dist/src/main.js",
-      "use": "@vercel/node",
-      "config": {
-        "memory": 1024,
-        "maxDuration": 60
-      }
+      "source": "/(.*)",
+      "destination": "/api"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "dist/src/main.js"
+  "functions": {
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 60,
+      "includeFiles": "{dist/**,node_modules/.prisma/**,node_modules/@prisma/client/**,prisma/**}"
     }
-  ]
+  }
 }
