@@ -6,6 +6,10 @@ export function getApiBase() {
   return API_BASE;
 }
 
+function networkErrorMessage() {
+  return 'Unable to reach DilYum services. Please check your internet connection and try again.';
+}
+
 export async function apiRequest(path, options = {}) {
   const { headers: optionHeaders, body, ...rest } = options;
   const isFormData =
@@ -28,9 +32,7 @@ export async function apiRequest(path, options = {}) {
       body,
     });
   } catch {
-    const err = new Error(
-      'Unable to reach DilYum services. Please check your connection and try again.',
-    );
+    const err = new Error(networkErrorMessage());
     err.code = 'NETWORK';
     throw err;
   }
@@ -51,7 +53,16 @@ export async function apiRequest(path, options = {}) {
         ? data.message.message
         : Array.isArray(data?.message)
           ? data.message.join(', ')
-          : data?.message || 'Request failed.';
+          : data?.message ||
+            (res.status === 401
+              ? 'Invalid email or password.'
+              : res.status === 403
+                ? 'You do not have permission to do that.'
+                : res.status === 404
+                  ? 'The requested resource was not found.'
+                  : res.status >= 500
+                    ? 'Something went wrong on the server. Please try again.'
+                    : 'Request failed.');
     const err = new Error(
       typeof message === 'string' ? message : 'Request failed.',
     );
@@ -66,7 +77,9 @@ export async function apiRequest(path, options = {}) {
               ? 'CONFLICT'
               : res.status === 400
                 ? 'VALIDATION'
-                : 'ERROR';
+                : res.status >= 500
+                  ? 'SERVER'
+                  : 'ERROR';
     err.status = res.status;
     err.data = typeof data?.message === 'object' ? data.message : data;
     throw err;
