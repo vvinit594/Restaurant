@@ -29,7 +29,7 @@ export async function apiRequest(path, options = {}) {
     });
   } catch {
     const err = new Error(
-      'Could not reach the API. If you are uploading an image, use JPG/PNG/WebP under 3MB.',
+      'Unable to reach DilYum services. Please check your connection and try again.',
     );
     err.code = 'NETWORK';
     throw err;
