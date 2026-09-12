@@ -1,18 +1,5 @@
 {
-  "framework": null,
-  "buildCommand": "npm run build",
-  "installCommand": "npm install",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api"
-    }
-  ],
-  "functions": {
-    "api/index.js": {
-      "memory": 1024,
-      "maxDuration": 60,
-      "includeFiles": "{dist/**,node_modules/.prisma/**,node_modules/@prisma/client/**,prisma/**}"
-    }
-  }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nestjs",
+  "installCommand": "npm install"
 }
