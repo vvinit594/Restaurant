@@ -17,7 +17,7 @@ import {
   SubscriptionStatus,
   UserRole,
 } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { auditLog } from '../../common/audit-log';
 import {
   ACTIVE_PLAN_CODES,

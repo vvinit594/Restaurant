@@ -599,8 +599,8 @@ export class SalesService {
       );
     }
 
-    const bcrypt = await import('bcrypt');
-    const passwordHash = await bcrypt.hash(password, 12);
+    const { hash } = await import('bcryptjs');
+    const passwordHash = await hash(password, 12);
     const salesCode = await this.nextSalesCode();
 
     const created = await this.prisma.$transaction(async (tx) => {

@@ -1,5 +1,5 @@
 import { PrismaClient, UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import * as dotenv from 'dotenv';
 import {
   LEGACY_PLAN_CODES,

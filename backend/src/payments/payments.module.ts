@@ -7,14 +7,21 @@ import { PaymentsGraceCron } from './payments-grace.cron';
 import { PaymentsService } from './payments.service';
 import { RazorpayClientService } from './razorpay-client.service';
 
+const isVercel = Boolean(process.env.VERCEL);
+
 @Module({
   imports: [
     PrismaModule,
-    ScheduleModule.forRoot(),
+    // In-process cron does not run reliably on Vercel serverless.
+    ...(isVercel ? [] : [ScheduleModule.forRoot()]),
     forwardRef(() => RestaurantDishesModule),
   ],
   controllers: [PaymentsController],
-  providers: [RazorpayClientService, PaymentsService, PaymentsGraceCron],
+  providers: [
+    RazorpayClientService,
+    PaymentsService,
+    ...(isVercel ? [] : [PaymentsGraceCron]),
+  ],
   exports: [PaymentsService, RazorpayClientService],
 })
 export class PaymentsModule {}
