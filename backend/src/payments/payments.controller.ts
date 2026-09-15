@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -32,6 +33,20 @@ export class PaymentsController {
   @Get('razorpay/config')
   getConfig() {
     return this.payments.getPublicKeyId();
+  }
+
+  /**
+   * Same grace-period job as @Cron(EVERY_HOUR).
+   * Vercel Cron invokes this hourly because in-process timers do not keep
+   * running between serverless invocations.
+   */
+  @Get('cron/grace-expiry')
+  async cronGraceExpiry(@Headers('authorization') authorization?: string) {
+    const secret = String(process.env.CRON_SECRET || '').trim();
+    if (!secret || authorization !== `Bearer ${secret}`) {
+      throw new UnauthorizedException();
+    }
+    return this.payments.suspendExpiredGracePeriods();
   }
 
   @Post('razorpay/webhook')
