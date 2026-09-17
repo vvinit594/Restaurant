@@ -30,6 +30,30 @@ const GRACE_HOURS = 24;
 const MONTHLY_TOTAL_COUNT = 120;
 const LAUNCH_TOTAL_COUNT = 40;
 
+function unixToDate(value: unknown): Date | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const ms = n > 1e12 ? n : n * 1000;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function safeIso(value: Date | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function isRazorpaySubscriptionPaidActive(status: unknown): boolean {
+  const st = String(status || '').toLowerCase();
+  return st === 'active' || st === 'authenticated';
+}
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -133,8 +157,15 @@ export class PaymentsService {
       try {
         const fetched = await this.razorpay.fetchSubscription(rzpSubId);
         shortUrl = fetched.short_url || null;
-      } catch {
-        /* ignore */
+        if (isRazorpaySubscriptionPaidActive(fetched?.status)) {
+          await this.activateLocalSubscription(sub, fetched);
+          throw new BadRequestException(
+            'Subscription is already active. Refresh the restaurant profile.',
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        /* ignore fetch failures and continue checkout */
       }
     }
 
@@ -175,6 +206,8 @@ export class PaymentsService {
   }
 
   async getRestaurantBilling(restaurantId: string) {
+    await this.syncFromRazorpayIfNeeded(restaurantId);
+
     const sub = await this.prisma.subscription.findFirst({
       where: {
         restaurantId,
@@ -213,9 +246,11 @@ export class PaymentsService {
     }
 
     const now = new Date();
-    const graceRemainingMs = sub.gracePeriodEndsAt
-      ? Math.max(0, sub.gracePeriodEndsAt.getTime() - now.getTime())
-      : null;
+    const graceEnd = sub.gracePeriodEndsAt;
+    const graceRemainingMs =
+      graceEnd && !Number.isNaN(graceEnd.getTime())
+        ? Math.max(0, graceEnd.getTime() - now.getTime())
+        : null;
 
     return {
       restaurant,
@@ -230,12 +265,12 @@ export class PaymentsService {
         planType: sub.plan.planType,
         status: sub.status,
         paymentStatus: sub.paymentStatus,
-        startedAt: sub.startedAt.toISOString(),
-        endsAt: sub.endsAt?.toISOString() || null,
-        lastPaymentAt: sub.lastPaymentAt?.toISOString() || null,
-        nextPaymentAt: sub.nextPaymentAt?.toISOString() || null,
-        paymentFailedAt: sub.paymentFailedAt?.toISOString() || null,
-        gracePeriodEndsAt: sub.gracePeriodEndsAt?.toISOString() || null,
+        startedAt: safeIso(sub.startedAt) || new Date().toISOString(),
+        endsAt: safeIso(sub.endsAt),
+        lastPaymentAt: safeIso(sub.lastPaymentAt),
+        nextPaymentAt: safeIso(sub.nextPaymentAt),
+        paymentFailedAt: safeIso(sub.paymentFailedAt),
+        gracePeriodEndsAt: safeIso(sub.gracePeriodEndsAt),
         graceRemainingHours:
           graceRemainingMs != null
             ? Math.ceil(graceRemainingMs / (1000 * 60 * 60))
@@ -254,6 +289,22 @@ export class PaymentsService {
   }
 
   async retryCheckout(restaurantId: string) {
+    await this.syncFromRazorpayIfNeeded(restaurantId);
+
+    const active = await this.prisma.subscription.findFirst({
+      where: {
+        restaurantId,
+        status: SubscriptionStatus.ACTIVE,
+        paymentStatus: PaymentStatus.PAID,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (active) {
+      throw new BadRequestException(
+        'Subscription is already active. Refresh the restaurant profile.',
+      );
+    }
+
     const sub = await this.prisma.subscription.findFirst({
       where: {
         restaurantId,
@@ -319,7 +370,14 @@ export class PaymentsService {
       throw err;
     }
 
-    await this.dispatchEvent(eventType, event.payload);
+    try {
+      await this.dispatchEvent(eventType, event.payload);
+    } catch (err) {
+      await this.prisma.razorpayWebhookEvent
+        .delete({ where: { eventId } })
+        .catch(() => undefined);
+      throw err;
+    }
 
     auditLog('RAZORPAY_WEBHOOK_PROCESSED', { eventId, eventType });
     return { ok: true, duplicate: false };
@@ -351,10 +409,16 @@ export class PaymentsService {
   }
 
   private async findSubscriptionFromPayload(payload: any) {
+    const inner = payload?.payload || payload;
     const subscriptionEntity =
-      payload?.subscription?.entity || payload?.subscription;
-    const paymentEntity = payload?.payment?.entity || payload?.payment;
-    const invoiceEntity = payload?.invoice?.entity || payload?.invoice;
+      inner?.subscription?.entity ||
+      inner?.subscription ||
+      payload?.subscription?.entity ||
+      payload?.subscription;
+    const paymentEntity =
+      inner?.payment?.entity || inner?.payment || payload?.payment;
+    const invoiceEntity =
+      inner?.invoice?.entity || inner?.invoice || payload?.invoice;
 
     const rzpSubId =
       subscriptionEntity?.id ||
@@ -388,29 +452,78 @@ export class PaymentsService {
     return null;
   }
 
-  private async onSubscriptionActivated(payload: any) {
-    const found = await this.findSubscriptionFromPayload(payload);
-    if (!found) return;
-    const { sub, subscriptionEntity } = found;
+  /**
+   * If DilYum is still PENDING/PAST_DUE/SUSPENDED but Razorpay already has
+   * an active/authenticated subscription, copy that state into the database.
+   * Never throws — profile/billing reads must stay HTTP 200.
+   */
+  async syncFromRazorpayIfNeeded(restaurantId: string): Promise<void> {
+    try {
+      const sub = await this.prisma.subscription.findFirst({
+        where: {
+          restaurantId,
+          razorpaySubscriptionId: { not: null },
+          status: {
+            in: [
+              SubscriptionStatus.PENDING,
+              SubscriptionStatus.PAST_DUE,
+              SubscriptionStatus.SUSPENDED,
+            ],
+          },
+        },
+        include: { plan: true, restaurant: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!sub?.razorpaySubscriptionId || !this.razorpay.isConfigured()) {
+        return;
+      }
+
+      const rzp = await this.razorpay.fetchSubscription(
+        sub.razorpaySubscriptionId,
+      );
+      if (!isRazorpaySubscriptionPaidActive(rzp?.status)) {
+        return;
+      }
+      await this.activateLocalSubscription(sub, rzp);
+    } catch (err: any) {
+      this.logger.warn(
+        `Razorpay subscription sync skipped for ${restaurantId}: ${
+          err?.message || err
+        }`,
+      );
+    }
+  }
+
+  private async activateLocalSubscription(
+    sub: {
+      id: string;
+      restaurantId: string;
+      razorpaySubscriptionId: string | null;
+      razorpayCustomerId: string | null;
+      plan: { billingDays?: number | null; billingMonths?: number | null };
+      restaurant: { status: RestaurantStatus };
+    },
+    rzpSub?: any,
+  ) {
     const now = new Date();
-    const endsAt = computeSubscriptionEndsAt(now, sub.plan);
-    const nextPaymentAt =
-      subscriptionEntity?.charge_at != null
-        ? new Date(Number(subscriptionEntity.charge_at) * 1000)
-        : endsAt;
+    const startedAt =
+      unixToDate(rzpSub?.current_start) || unixToDate(rzpSub?.start_at) || now;
+    const endsAt =
+      unixToDate(rzpSub?.current_end) ||
+      unixToDate(rzpSub?.end_at) ||
+      computeSubscriptionEndsAt(startedAt, sub.plan);
+    const nextPaymentAt = unixToDate(rzpSub?.charge_at) || endsAt;
 
     await this.prisma.subscription.update({
       where: { id: sub.id },
       data: {
         status: SubscriptionStatus.ACTIVE,
         paymentStatus: PaymentStatus.PAID,
-        startedAt: now,
+        startedAt,
         endsAt,
         nextPaymentAt,
-        razorpaySubscriptionId:
-          subscriptionEntity?.id || sub.razorpaySubscriptionId,
-        razorpayCustomerId:
-          subscriptionEntity?.customer_id || sub.razorpayCustomerId,
+        razorpaySubscriptionId: rzpSub?.id || sub.razorpaySubscriptionId,
+        razorpayCustomerId: rzpSub?.customer_id || sub.razorpayCustomerId,
         paymentFailedAt: null,
         gracePeriodStartedAt: null,
         gracePeriodEndsAt: null,
@@ -423,6 +536,13 @@ export class PaymentsService {
         data: { status: RestaurantStatus.ACTIVE },
       });
     }
+  }
+
+  private async onSubscriptionActivated(payload: any) {
+    const found = await this.findSubscriptionFromPayload(payload);
+    if (!found) return;
+    const { sub, subscriptionEntity } = found;
+    await this.activateLocalSubscription(sub, subscriptionEntity);
   }
 
   private async onPaymentSuccess(payload: any) {
@@ -440,9 +560,10 @@ export class PaymentsService {
       Math.round(Number(sub.plan.priceAmount) * 100);
     const amount = Number(amountPaise) / 100;
     const method = paymentEntity?.method || null;
-    const paidAt = paymentEntity?.created_at
-      ? new Date(Number(paymentEntity.created_at) * 1000)
-      : new Date();
+    const paidAt =
+      unixToDate(paymentEntity?.created_at) ||
+      unixToDate(invoiceEntity?.date) ||
+      new Date();
 
     if (rzpPaymentId) {
       const existingPay = await this.prisma.payment.findUnique({
@@ -471,10 +592,7 @@ export class PaymentsService {
     }
 
     const endsAt = computeSubscriptionEndsAt(paidAt, sub.plan);
-    const nextPaymentAt =
-      subscriptionEntity?.charge_at != null
-        ? new Date(Number(subscriptionEntity.charge_at) * 1000)
-        : endsAt;
+    const nextPaymentAt = unixToDate(subscriptionEntity?.charge_at) || endsAt;
 
     await this.prisma.subscription.update({
       where: { id: sub.id },
@@ -706,9 +824,9 @@ export class PaymentsService {
       status: p.status,
       method: p.method,
       failureReason: p.failureReason,
-      paidAt: p.paidAt?.toISOString() || null,
+      paidAt: safeIso(p.paidAt),
       razorpayPaymentId: p.razorpayPaymentId,
-      createdAt: p.createdAt.toISOString(),
+      createdAt: safeIso(p.createdAt) || new Date().toISOString(),
     };
   }
 }

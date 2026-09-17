@@ -71,14 +71,27 @@ export default function RestaurantDetailPage() {
   };
 
   const fetchRestaurantAndBilling = async () => {
-    const data = await getRestaurant(restaurantId);
     let billingData = null;
+    let restaurantData = null;
+    let restaurantError = null;
+
     try {
       billingData = await getAdminRestaurantBilling(restaurantId);
     } catch {
       billingData = null;
     }
-    return { restaurant: data, billing: billingData };
+
+    try {
+      restaurantData = await getRestaurant(restaurantId);
+    } catch (err) {
+      restaurantError = err;
+    }
+
+    if (!restaurantData && !billingData && restaurantError) {
+      throw restaurantError;
+    }
+
+    return { restaurant: restaurantData, billing: billingData };
   };
 
   const load = async ({ silent = false } = {}) => {
@@ -89,10 +102,17 @@ export default function RestaurantDetailPage() {
     try {
       const result = await fetchRestaurantAndBilling();
       if (cancelledRef.current) return result;
-      setRestaurant(result.restaurant);
-      setBilling(result.billing);
-      if (!silent) {
-        applyRestaurantForm(result.restaurant);
+      if (result.restaurant) {
+        setRestaurant(result.restaurant);
+        if (!silent) {
+          applyRestaurantForm(result.restaurant);
+        }
+      }
+      if (result.billing !== undefined) {
+        setBilling(result.billing);
+      }
+      if (!result.restaurant && !silent) {
+        setError('Failed to load restaurant.');
       }
       return result;
     } catch (err) {
@@ -116,8 +136,8 @@ export default function RestaurantDetailPage() {
         async () => {
           const result = await fetchRestaurantAndBilling();
           if (!cancelledRef.current) {
-            setRestaurant(result.restaurant);
-            setBilling(result.billing);
+            if (result?.restaurant) setRestaurant(result.restaurant);
+            if (result?.billing) setBilling(result.billing);
           }
           return result;
         },
@@ -443,7 +463,7 @@ export default function RestaurantDetailPage() {
                               push('Subscription is active.');
                             } else if (isAwaitingWebhookConfirmation(latestSub)) {
                               push(
-                                'Razorpay accepted the payment. Status will update when the webhook confirms it.',
+                                'Payment is still pending on the server. Refresh this page in a moment — do not start checkout again unless payment actually failed.',
                               );
                             }
                           } else {
@@ -451,7 +471,20 @@ export default function RestaurantDetailPage() {
                             await load({ silent: true });
                           }
                         } catch (err) {
-                          push(err.message || 'Could not start checkout.', 'error');
+                          if (/already active/i.test(err.message || '')) {
+                            const latest = await pollSubscriptionFromBackend();
+                            const latestSub = pickSubscription(
+                              latest?.billing,
+                              latest?.restaurant,
+                            );
+                            if (isPaidActiveSubscription(latestSub)) {
+                              push('Subscription is active.');
+                            } else {
+                              push(err.message, 'error');
+                            }
+                          } else {
+                            push(err.message || 'Could not start checkout.', 'error');
+                          }
                         } finally {
                           setPayBusy(false);
                         }

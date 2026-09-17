@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  Logger,
   Param,
   Post,
   Req,
@@ -23,6 +24,8 @@ import { RazorpayClientService } from './razorpay-client.service';
 
 @Controller('payments')
 export class PaymentsController {
+  private readonly logger = new Logger(PaymentsController.name);
+
   constructor(
     private readonly payments: PaymentsService,
     private readonly razorpay: RazorpayClientService,
@@ -62,6 +65,11 @@ export class PaymentsController {
         : Buffer.from(JSON.stringify(body || {})));
 
     if (!this.razorpay.verifyWebhookSignature(raw, signature || '')) {
+      this.logger.warn(
+        `Razorpay webhook signature mismatch (rawBytes=${
+          Buffer.isBuffer(raw) ? raw.length : String(raw).length
+        }, hasRawBody=${Boolean(req.rawBody)})`,
+      );
       throw new BadRequestException('Invalid Razorpay webhook signature.');
     }
 

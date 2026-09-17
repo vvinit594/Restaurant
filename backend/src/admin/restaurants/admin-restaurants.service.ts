@@ -32,6 +32,18 @@ import { QrService } from '../../qr/qr.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 
+function isoOrNull(value?: Date | null): string | null {
+  if (!value) return null;
+  try {
+    if (typeof value.getTime === 'function' && Number.isNaN(value.getTime())) {
+      return null;
+    }
+    return typeof value.toISOString === 'function' ? value.toISOString() : null;
+  } catch {
+    return null;
+  }
+}
+
 const LIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.ACTIVE,
   SubscriptionStatus.TRIAL,
@@ -500,6 +512,11 @@ export class AdminRestaurantsService {
   }
 
   async getOne(id: string) {
+    try {
+      await this.paymentsService?.syncFromRazorpayIfNeeded(id);
+    } catch {
+      // Profile read must succeed even if Razorpay is unreachable.
+    }
     const restaurant = await this.prisma.restaurant.findFirst({
       where: { id, deletedAt: null },
       include: OWNER_INCLUDE,
@@ -984,8 +1001,8 @@ export class AdminRestaurantsService {
         ? {
             id: r.salesPerson.id,
             salesCode: r.salesPerson.salesCode,
-            name: r.salesPerson.user.name,
-            email: r.salesPerson.user.email,
+            name: r.salesPerson.user?.name || '',
+            email: r.salesPerson.user?.email || '',
           }
         : null,
       subscriptionPlanId: plan?.code.toLowerCase() || null,
@@ -1006,12 +1023,11 @@ export class AdminRestaurantsService {
         ? {
             status: sub.status || null,
             paymentStatus: (sub as any).paymentStatus || null,
-            startedAt: sub.startedAt?.toISOString?.() || null,
-            endsAt: sub.endsAt?.toISOString?.() || null,
-            nextPaymentAt: (sub as any).nextPaymentAt?.toISOString?.() || null,
-            lastPaymentAt: (sub as any).lastPaymentAt?.toISOString?.() || null,
-            gracePeriodEndsAt:
-              (sub as any).gracePeriodEndsAt?.toISOString?.() || null,
+            startedAt: isoOrNull(sub.startedAt),
+            endsAt: isoOrNull(sub.endsAt),
+            nextPaymentAt: isoOrNull((sub as any).nextPaymentAt),
+            lastPaymentAt: isoOrNull((sub as any).lastPaymentAt),
+            gracePeriodEndsAt: isoOrNull((sub as any).gracePeriodEndsAt),
             razorpaySubscriptionId:
               (sub as any).razorpaySubscriptionId || null,
           }

@@ -84,7 +84,13 @@ applyExpressCors(buildAllowedOrigins(process.env.FRONTEND_ORIGIN));
 // Razorpay webhook raw body (before Nest JSON parser).
 server.use(
   '/api/v1/payments/razorpay/webhook',
-  express.raw({ type: 'application/json', limit: '2mb' }),
+  express.raw({
+    type: (req) => {
+      const ct = String(req.headers['content-type'] || '').toLowerCase();
+      return !ct || ct.includes('json') || ct.includes('octet-stream');
+    },
+    limit: '2mb',
+  }),
   (req: Request & { rawBody?: Buffer }, _res, next: NextFunction) => {
     if (Buffer.isBuffer(req.body)) {
       req.rawBody = req.body;

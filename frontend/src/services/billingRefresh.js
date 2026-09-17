@@ -75,23 +75,27 @@ export function isSubscriptionSettled(sub) {
 }
 
 /**
- * Limited refetch loop so Razorpay webhook can land after Checkout.
+ * Limited refetch loop so Razorpay webhook / backend sync can land after Checkout.
  * Stops on ACTIVE/PAID (or other settled statuses). Never starts checkout.
+ * Transient API errors do not abort the loop.
  */
 export async function pollUntilSubscriptionSettled(fetchFn, options = {}) {
   const maxAttempts = options.maxAttempts ?? 8;
   const delayMs = options.delayMs ?? 2000;
   const isCancelled = options.isCancelled || (() => false);
 
-  let last = await fetchFn();
-  if (isCancelled() || isSubscriptionSettled(pickSubscription(last?.billing, last?.restaurant))) {
-    return last;
-  }
+  let last = { billing: null, restaurant: null };
 
-  for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
-    await delay(delayMs);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      await delay(delayMs);
+    }
     if (isCancelled()) return last;
-    last = await fetchFn();
+    try {
+      last = (await fetchFn()) || last;
+    } catch {
+      // Keep polling on HTTP 500 / network errors; backend remains source of truth.
+    }
     if (isCancelled() || isSubscriptionSettled(pickSubscription(last?.billing, last?.restaurant))) {
       return last;
     }

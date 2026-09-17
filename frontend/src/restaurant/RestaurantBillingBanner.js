@@ -52,7 +52,7 @@ export default function RestaurantBillingBanner() {
       return await pollUntilSubscriptionSettled(
         async () => {
           const result = await fetchBilling();
-          if (!cancelledRef.current) {
+          if (!cancelledRef.current && result?.billing) {
             setBilling(result.billing);
           }
           return result;
@@ -121,13 +121,11 @@ export default function RestaurantBillingBanner() {
       if (result.success) {
         const latest = await pollSubscriptionFromBackend();
         const latestSub = latest?.billing?.subscription;
-        if (
-          latestSub &&
-          !isPaidActiveSubscription(latestSub) &&
-          isAwaitingWebhookConfirmation(latestSub)
-        ) {
+        if (isPaidActiveSubscription(latestSub)) {
+          setError('');
+        } else if (isAwaitingWebhookConfirmation(latestSub)) {
           setError(
-            'Razorpay accepted the payment. Status will update when the webhook confirms it.',
+            'Payment is still pending on the server. Refresh this page in a moment — do not start checkout again unless payment actually failed.',
           );
         }
       } else {
@@ -135,7 +133,12 @@ export default function RestaurantBillingBanner() {
         await load();
       }
     } catch (err) {
-      setError(err.message || 'Could not start payment.');
+      if (/already active/i.test(err.message || '')) {
+        await pollSubscriptionFromBackend();
+        setError('');
+      } else {
+        setError(err.message || 'Could not start payment.');
+      }
     } finally {
       setBusy(false);
     }
