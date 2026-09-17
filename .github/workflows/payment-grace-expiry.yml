@@ -1,0 +1,26 @@
+# Razorpay webhooks handle payment state changes. GitHub Actions invokes the
+# grace-expiry endpoint hourly to enforce DilYum's 24-hour unpaid grace period.
+name: Payment grace-expiry watchdog
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  invoke-grace-expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call grace-expiry endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET GitHub secret is not set."
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 60 \
+            -X GET \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://restaurant-seven-smoky.vercel.app/api/v1/payments/cron/grace-expiry"
