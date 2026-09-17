@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
 import Loader from '../components/Loader';
@@ -14,6 +14,14 @@ import {
   startAdminRestaurantCheckout,
 } from '../services/paymentsApi';
 import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
+import {
+  checkoutCtaLabel,
+  isAwaitingWebhookConfirmation,
+  isCheckoutNeeded,
+  isPaidActiveSubscription,
+  pickSubscription,
+  pollUntilSubscriptionSettled,
+} from '../services/billingRefresh';
 import { slugify } from '../services/adminStorage';
 import ConfirmDialog from './components/ConfirmDialog';
 import StatusBadge from './components/StatusBadge';
@@ -35,45 +43,125 @@ export default function RestaurantDetailPage() {
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
+  const pollLockRef = useRef(false);
+  const cancelledRef = useRef(false);
 
-  const load = async () => {
-    setLoading(true);
-    setError('');
+  const applyRestaurantForm = (data) => {
+    setForm({
+      name: data.name,
+      slug: data.slug,
+      description: data.description || '',
+      logoUrl: data.logoUrl || '',
+      coverUrl: data.coverUrl || '',
+      phone: data.phone,
+      email: data.email,
+      address: data.address,
+      city: data.city,
+      state: data.state || '',
+      pincode: data.pincode || '',
+      adminName: data.admin?.name || '',
+      adminEmail: data.admin?.email || '',
+      adminPhone: data.admin?.phone || '',
+    });
+    setLogoFile(null);
+    setCoverFile(null);
+  };
+
+  const fetchRestaurantAndBilling = async () => {
+    const data = await getRestaurant(restaurantId);
+    let billingData = null;
     try {
-      const data = await getRestaurant(restaurantId);
-      setRestaurant(data);
-      setForm({
-        name: data.name,
-        slug: data.slug,
-        description: data.description || '',
-        logoUrl: data.logoUrl || '',
-        coverUrl: data.coverUrl || '',
-        phone: data.phone,
-        email: data.email,
-        address: data.address,
-        city: data.city,
-        state: data.state || '',
-        pincode: data.pincode || '',
-        adminName: data.admin?.name || '',
-        adminEmail: data.admin?.email || '',
-        adminPhone: data.admin?.phone || '',
-      });
-      setLogoFile(null);
-      setCoverFile(null);
-      getAdminRestaurantBilling(restaurantId)
-        .then(setBilling)
-        .catch(() => setBilling(null));
+      billingData = await getAdminRestaurantBilling(restaurantId);
+    } catch {
+      billingData = null;
+    }
+    return { restaurant: data, billing: billingData };
+  };
+
+  const load = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
+    try {
+      const result = await fetchRestaurantAndBilling();
+      if (cancelledRef.current) return result;
+      setRestaurant(result.restaurant);
+      setBilling(result.billing);
+      if (!silent) {
+        applyRestaurantForm(result.restaurant);
+      }
+      return result;
     } catch (err) {
-      setError(err.message || 'Failed to load restaurant.');
+      if (!silent) {
+        setError(err.message || 'Failed to load restaurant.');
+      }
+      return null;
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const pollSubscriptionFromBackend = async () => {
+    if (pollLockRef.current) return null;
+    pollLockRef.current = true;
+    setConfirmingPayment(true);
+    try {
+      return await pollUntilSubscriptionSettled(
+        async () => {
+          const result = await fetchRestaurantAndBilling();
+          if (!cancelledRef.current) {
+            setRestaurant(result.restaurant);
+            setBilling(result.billing);
+          }
+          return result;
+        },
+        { isCancelled: () => cancelledRef.current },
+      );
+    } finally {
+      pollLockRef.current = false;
+      if (!cancelledRef.current) {
+        setConfirmingPayment(false);
+      }
     }
   };
 
   useEffect(() => {
-    load();
+    cancelledRef.current = false;
+
+    const maybePollPendingCheckout = async (result) => {
+      if (!result) return;
+      const sub = pickSubscription(result.billing, result.restaurant);
+      if (isAwaitingWebhookConfirmation(sub)) {
+        await pollSubscriptionFromBackend();
+      }
+    };
+
+    load().then((result) => {
+      if (!cancelledRef.current) {
+        maybePollPendingCheckout(result);
+      }
+    });
+
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible' || cancelledRef.current) return;
+      load({ silent: true }).then((result) => {
+        if (!cancelledRef.current) {
+          maybePollPendingCheckout(result);
+        }
+      });
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelledRef.current = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId]);
 
@@ -175,6 +263,13 @@ export default function RestaurantDetailPage() {
   }
 
   const s = restaurant.stats || {};
+  const subscription = pickSubscription(billing, restaurant);
+  const subscriptionStatus = String(subscription?.status || '').toUpperCase();
+  const paymentStatus = String(subscription?.paymentStatus || '').toUpperCase();
+  const paidActive = isPaidActiveSubscription(subscription);
+  const showCheckoutCta =
+    !confirmingPayment && !paidActive && isCheckoutNeeded(billing, restaurant);
+  const showConfirming = confirmingPayment && !paidActive;
 
   return (
     <div className="admin-page">
@@ -269,35 +364,60 @@ export default function RestaurantDetailPage() {
               <div><dt>Email</dt><dd>{restaurant.email}</dd></div>
               <div><dt>Status</dt><dd><StatusBadge status={restaurant.status} /></dd></div>
               <div><dt>Subscription</dt><dd>{restaurant.subscriptionPlan?.name} ({restaurant.subscriptionPlan?.priceLabel})</dd></div>
-              {restaurant.subscription?.status ? (
+              {subscription?.status ? (
                 <div>
                   <dt>Subscription status</dt>
                   <dd>
-                    {restaurant.subscription.status}
-                    {restaurant.subscription.paymentStatus
-                      ? ` · ${restaurant.subscription.paymentStatus}`
-                      : ''}
+                    {subscriptionStatus}
+                    {paymentStatus ? ` · ${paymentStatus}` : ''}
                   </dd>
                 </div>
               ) : null}
-              {restaurant.subscription?.nextPaymentAt ? (
+              {subscription?.nextPaymentAt ? (
                 <div>
                   <dt>Next payment</dt>
-                  <dd>{new Date(restaurant.subscription.nextPaymentAt).toLocaleString()}</dd>
+                  <dd>{new Date(subscription.nextPaymentAt).toLocaleString()}</dd>
                 </div>
               ) : null}
-              {restaurant.subscription?.startedAt ? (
+              {subscription?.startedAt ? (
                 <div>
                   <dt>Subscription period</dt>
                   <dd>
-                    {new Date(restaurant.subscription.startedAt).toLocaleDateString()}
-                    {restaurant.subscription.endsAt
-                      ? ` → ${new Date(restaurant.subscription.endsAt).toLocaleDateString()}`
+                    {new Date(subscription.startedAt).toLocaleDateString()}
+                    {subscription.endsAt
+                      ? ` → ${new Date(subscription.endsAt).toLocaleDateString()}`
                       : ''}
                   </dd>
                 </div>
               ) : null}
-              {billing?.checkoutAvailable ? (
+              {paidActive ? (
+                <div>
+                  <dt>Payment</dt>
+                  <dd>
+                    Paid · Active subscription
+                    {subscription?.lastPaymentAt
+                      ? ` · last payment ${new Date(subscription.lastPaymentAt).toLocaleString()}`
+                      : ''}
+                  </dd>
+                </div>
+              ) : null}
+              {showConfirming ? (
+                <div>
+                  <dt>Payment</dt>
+                  <dd>Confirming payment with Razorpay…</dd>
+                </div>
+              ) : null}
+              {subscriptionStatus === 'SUSPENDED' || paymentStatus === 'FAILED' ? (
+                <div>
+                  <dt>Payment recovery</dt>
+                  <dd>
+                    {subscriptionStatus === 'SUSPENDED'
+                      ? 'Subscription is suspended. Retry checkout to restore access.'
+                      : 'The last payment attempt failed. Retry checkout to continue.'}
+                  </dd>
+                </div>
+              ) : null}
+              {showCheckoutCta ? (
                 <div>
                   <dt>Payment</dt>
                   <dd>
@@ -311,10 +431,24 @@ export default function RestaurantDetailPage() {
                           const checkout = await startAdminRestaurantCheckout(restaurantId);
                           const result = await openRazorpaySubscriptionCheckout(checkout);
                           if (result.success) {
-                            push('Payment authorized. Waiting for Razorpay webhook confirmation.');
-                            load();
+                            push(
+                              'Checkout completed. Confirming subscription status from the server…',
+                            );
+                            const latest = await pollSubscriptionFromBackend();
+                            const latestSub = pickSubscription(
+                              latest?.billing,
+                              latest?.restaurant,
+                            );
+                            if (isPaidActiveSubscription(latestSub)) {
+                              push('Subscription is active.');
+                            } else if (isAwaitingWebhookConfirmation(latestSub)) {
+                              push(
+                                'Razorpay accepted the payment. Status will update when the webhook confirms it.',
+                              );
+                            }
                           } else {
                             push(result.error || 'Checkout not completed.', 'error');
+                            await load({ silent: true });
                           }
                         } catch (err) {
                           push(err.message || 'Could not start checkout.', 'error');
@@ -323,7 +457,7 @@ export default function RestaurantDetailPage() {
                         }
                       }}
                     >
-                      {payBusy ? 'Opening…' : 'Retry / Start Razorpay Checkout'}
+                      {payBusy ? 'Opening…' : checkoutCtaLabel(subscription)}
                     </button>
                   </dd>
                 </div>

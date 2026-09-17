@@ -50,6 +50,7 @@ const OWNER_INCLUDE = {
   },
   subscriptions: {
     where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
+    orderBy: { createdAt: 'desc' },
     take: 1,
     include: { plan: true },
   },
@@ -123,6 +124,7 @@ export class AdminRestaurantsService {
         },
         subscriptions: {
           where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
+          orderBy: { createdAt: 'desc' },
           take: 1,
           include: { plan: true },
         },
@@ -723,6 +725,7 @@ export class AdminRestaurantsService {
       include: {
         subscriptions: {
           where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
+          orderBy: { createdAt: 'desc' },
           take: 1,
           include: { plan: true },
         },
