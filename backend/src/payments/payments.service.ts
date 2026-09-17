@@ -335,17 +335,14 @@ export class PaymentsService {
       case 'invoice.paid':
         await this.onPaymentSuccess(payload);
         break;
-      case 'subscription.pending':
-        // Mandate pending — keep PENDING
-        break;
       case 'subscription.halted':
       case 'subscription.cancelled':
       case 'subscription.completed':
         await this.onSubscriptionEnded(payload, eventType);
         break;
+      // subscription.pending uses the same 24h grace path as payment.failed.
       case 'payment.failed':
-      case 'invoice.payment_failed':
-      case 'subscription.payment_failed':
+      case 'subscription.pending':
         await this.onPaymentFailed(payload);
         break;
       default:
