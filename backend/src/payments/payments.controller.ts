@@ -72,7 +72,12 @@ export class PaymentsController {
           String(signature || '').trim(),
         )}`,
       );
-      throw new BadRequestException('Invalid Razorpay webhook signature.');
+      throw new BadRequestException({
+        message: 'Invalid Razorpay webhook signature.',
+        rawBytes: Buffer.isBuffer(raw) ? raw.length : String(raw).length,
+        hasRawBody: Boolean(req.rawBody),
+        hasSignature: Boolean(String(signature || '').trim()),
+      });
     }
 
     const event =
