@@ -66,9 +66,11 @@ export class PaymentsController {
 
     if (!this.razorpay.verifyWebhookSignature(raw, signature || '')) {
       this.logger.warn(
-        `Razorpay webhook signature mismatch (rawBytes=${
+        `Razorpay webhook signature mismatch: rawBytes=${
           Buffer.isBuffer(raw) ? raw.length : String(raw).length
-        }, hasRawBody=${Boolean(req.rawBody)})`,
+        } hasRawBody=${Boolean(req.rawBody)} hasSignature=${Boolean(
+          String(signature || '').trim(),
+        )}`,
       );
       throw new BadRequestException('Invalid Razorpay webhook signature.');
     }
