@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Get,
   Headers,
@@ -21,6 +20,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { RestaurantContextService } from '../restaurants/restaurant-context.service';
 import { PaymentsService } from './payments.service';
 import { RazorpayClientService } from './razorpay-client.service';
+import { extractRazorpayWebhookRawBody } from './webhook-raw-body';
 
 @Controller('payments')
 export class PaymentsController {
@@ -56,34 +56,25 @@ export class PaymentsController {
   async webhook(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-razorpay-signature') signature: string,
-    @Body() body: any,
   ) {
-    const raw =
-      req.rawBody ||
-      (Buffer.isBuffer((req as any).body)
-        ? (req as any).body
-        : Buffer.from(JSON.stringify(body || {})));
+    const raw = extractRazorpayWebhookRawBody(req);
+    const hasSignature = Boolean(String(signature || '').trim());
+    const rawBytes = raw ? raw.length : 0;
+    const hasRawBody = Boolean(req.rawBody);
 
-    if (!this.razorpay.verifyWebhookSignature(raw, signature || '')) {
+    if (!raw || !this.razorpay.verifyWebhookSignature(raw, signature || '')) {
       this.logger.warn(
-        `Razorpay webhook signature mismatch: rawBytes=${
-          Buffer.isBuffer(raw) ? raw.length : String(raw).length
-        } hasRawBody=${Boolean(req.rawBody)} hasSignature=${Boolean(
-          String(signature || '').trim(),
-        )}`,
+        `Razorpay webhook signature mismatch: rawBytes=${rawBytes} hasRawBody=${hasRawBody} hasSignature=${hasSignature}`,
       );
       throw new BadRequestException({
         message: 'Invalid Razorpay webhook signature.',
-        rawBytes: Buffer.isBuffer(raw) ? raw.length : String(raw).length,
-        hasRawBody: Boolean(req.rawBody),
-        hasSignature: Boolean(String(signature || '').trim()),
+        rawBytes,
+        hasRawBody,
+        hasSignature,
       });
     }
 
-    const event =
-      typeof body === 'object' && body && !Buffer.isBuffer(body)
-        ? body
-        : JSON.parse(raw.toString('utf8'));
+    const event = JSON.parse(raw.toString('utf8'));
     return this.payments.processWebhookEvent(event);
   }
 

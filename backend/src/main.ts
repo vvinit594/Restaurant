@@ -81,28 +81,19 @@ function applyExpressCors(allowedOrigins: string[]) {
 
 applyExpressCors(buildAllowedOrigins(process.env.FRONTEND_ORIGIN));
 
-// Razorpay webhook raw body (before Nest JSON parser).
-server.use(
-  '/api/v1/payments/razorpay/webhook',
-  express.raw({
-    type: (req) => {
-      const ct = String(req.headers['content-type'] || '').toLowerCase();
-      return !ct || ct.includes('json') || ct.includes('octet-stream');
-    },
-    limit: '2mb',
-  }),
-  (req: Request & { rawBody?: Buffer }, _res, next: NextFunction) => {
-    if (Buffer.isBuffer(req.body)) {
-      req.rawBody = req.body;
-      try {
-        (req as any).body = JSON.parse(req.body.toString('utf8'));
-      } catch {
-        (req as any).body = {};
-      }
-    }
-    next();
-  },
-);
+/**
+ * Capture original JSON bytes for Razorpay HMAC.
+ * Must run as json()'s verify callback — never JSON.stringify a parsed object.
+ */
+function attachJsonRawBody(
+  req: Request & { rawBody?: Buffer },
+  _res: Response,
+  buf: Buffer,
+) {
+  if (buf?.length && !req.rawBody) {
+    req.rawBody = Buffer.from(buf);
+  }
+}
 
 /**
  * Vercel NestJS zero-config requires bootstrap() + app.listen().
@@ -119,15 +110,10 @@ async function bootstrap() {
   );
 
   app.use(
-    (req: Request & { rawBody?: Buffer }, res: Response, next: NextFunction) => {
-      if (
-        req.originalUrl?.includes('/payments/razorpay/webhook') &&
-        req.rawBody
-      ) {
-        return next();
-      }
-      return json({ limit: '1mb' })(req, res, next);
-    },
+    json({
+      limit: '2mb',
+      verify: attachJsonRawBody,
+    }),
   );
   app.use(urlencoded({ extended: true, limit: '1mb' }));
 
