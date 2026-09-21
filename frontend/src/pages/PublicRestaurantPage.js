@@ -5,6 +5,8 @@ import CartDrawer from '../components/CartDrawer';
 import Loader from '../components/Loader';
 import OrderCheckoutModal from '../components/OrderCheckoutModal';
 import SiteNavbar from '../components/SiteNavbar';
+import { recordRestaurantVisit } from '../services/customerApi';
+import { useCustomerDevice } from '../customer/CustomerDeviceContext';
 import {
   cartQtyTotal,
   clearCart,
@@ -31,6 +33,7 @@ export default function PublicRestaurantPage() {
   const [cartItems, setCartItems] = useState(() => loadCart(restaurantSlug));
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const { maybeAskPush } = useCustomerDevice();
 
   useEffect(() => {
     setCartItems(loadCart(restaurantSlug));
@@ -79,6 +82,11 @@ export default function PublicRestaurantPage() {
       alive = false;
     };
   }, [restaurantSlug, token]);
+
+  useEffect(() => {
+    if (!restaurantSlug || loading || error || unavailable) return;
+    recordRestaurantVisit(restaurantSlug).catch(() => undefined);
+  }, [restaurantSlug, loading, error, unavailable]);
 
   useEffect(() => {
     if (loading || !fromQr || unavailable || error) return;
@@ -362,6 +370,7 @@ export default function PublicRestaurantPage() {
         onSuccess={() => {
           clearCart(restaurant.slug || restaurantSlug);
           setCartItems([]);
+          maybeAskPush();
         }}
       />
     </div>

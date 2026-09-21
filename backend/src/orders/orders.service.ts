@@ -5,11 +5,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CouponDiscountType,
+  CustomerCouponStatus,
   OrderStatus,
   Prisma,
   RestaurantStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CustomerPushService } from '../customer/customer-push.service';
+import { CustomerService } from '../customer/customer.service';
+import type { CustomerDeviceIdentity } from '../customer/customer-device.service';
 import { CreatePublicOrderDto } from './dto/order.dto';
 
 const ACTIVE_STATUSES: OrderStatus[] = [
@@ -35,7 +40,11 @@ const MAX_QTY_PER_DISH = 20;
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly customers: CustomerService,
+    private readonly push: CustomerPushService,
+  ) {}
 
   async ensureDefaultTables(restaurantId: string) {
     const count = await this.prisma.diningTable.count({
@@ -75,7 +84,11 @@ export class OrdersService {
     };
   }
 
-  async createPublicOrder(slug: string, dto: CreatePublicOrderDto) {
+  async createPublicOrder(
+    slug: string,
+    dto: CreatePublicOrderDto,
+    identity?: CustomerDeviceIdentity | null,
+  ) {
     const restaurant = await this.findActiveRestaurantBySlug(slug);
 
     if (dto.idempotencyKey) {
@@ -168,12 +181,30 @@ export class OrdersService {
 
     // Extensible billing foundation (tax/discount/service later).
     const taxAmount = new Prisma.Decimal(0);
-    const discountAmount = new Prisma.Decimal(0);
+    let discountAmount = new Prisma.Decimal(0);
     const serviceCharge = new Prisma.Decimal(0);
-    const total = subtotal
-      .add(taxAmount)
-      .add(serviceCharge)
-      .sub(discountAmount);
+    let appliedCouponId: string | null = null;
+    let appliedCustomerCouponId: string | null = null;
+
+    if (dto.couponCode) {
+      if (!identity) {
+        throw new BadRequestException(
+          'Register this device before applying a coupon.',
+        );
+      }
+      const applied = await this.resolveCouponDiscount(
+        restaurant.id,
+        identity.customerId,
+        dto.couponCode,
+        subtotal,
+      );
+      discountAmount = applied.discountAmount;
+      appliedCouponId = applied.couponId;
+      appliedCustomerCouponId = applied.customerCouponId;
+    }
+
+    const totalRaw = subtotal.add(taxAmount).add(serviceCharge).sub(discountAmount);
+    const total = totalRaw.lessThan(0) ? new Prisma.Decimal(0) : totalRaw;
 
     const orderNumber = await this.nextOrderNumber();
 
@@ -194,15 +225,29 @@ export class OrdersService {
               total,
               notes: dto.notes || null,
               idempotencyKey: dto.idempotencyKey || null,
+              customerId: identity?.customerId || null,
+              customerDeviceId: identity?.deviceId || null,
+              couponId: appliedCouponId,
               items: { create: itemRows },
             },
             include: { items: true },
           });
+          if (appliedCustomerCouponId) {
+            await tx.customerCoupon.update({
+              where: { id: appliedCustomerCouponId },
+              data: { status: CustomerCouponStatus.USED, usedAt: new Date() },
+            });
+            await tx.coupon.update({
+              where: { id: appliedCouponId! },
+              data: { usedCount: { increment: 1 } },
+            });
+          }
           return order;
         },
         { maxWait: 10_000, timeout: 20_000 },
       );
 
+      await this.afterPublicOrderPlaced(restaurant, created, identity);
       return this.toOrderDto(created, restaurant.name);
     } catch (err: any) {
       if (
@@ -219,6 +264,27 @@ export class OrdersService {
         if (existing) return this.toOrderDto(existing, restaurant.name);
       }
       throw err;
+    }
+  }
+
+  private async afterPublicOrderPlaced(
+    restaurant: { id: string; name: string },
+    order: { id: string; orderNumber: string; status: OrderStatus; customerId?: string | null },
+    identity?: CustomerDeviceIdentity | null,
+  ) {
+    if (!identity) return;
+    try {
+      await this.customers.recordOrder(identity, restaurant.id);
+      await this.push.notifyOrderStatus({
+        customerId: identity.customerId,
+        restaurantId: restaurant.id,
+        restaurantName: restaurant.name,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+      });
+    } catch {
+      // Ordering must succeed even if notification delivery fails.
     }
   }
 
@@ -334,6 +400,14 @@ export class OrdersService {
       where: { id: restaurantId },
       select: { name: true },
     });
+    await this.notifyStatusQuietly({
+      customerId: updated.customerId,
+      restaurantId,
+      restaurantName: restaurant?.name || '',
+      orderId: updated.id,
+      orderNumber: updated.orderNumber,
+      status: updated.status,
+    });
     return this.toOrderDto(updated, restaurant?.name || '');
   }
 
@@ -414,6 +488,14 @@ export class OrdersService {
     const updated = await this.prisma.order.findFirst({
       where: { id: order.id, restaurantId },
       include: { items: true },
+    });
+    await this.notifyStatusQuietly({
+      customerId: updated?.customerId,
+      restaurantId,
+      restaurantName: restaurant?.name || '',
+      orderId: updated!.id,
+      orderNumber: updated!.orderNumber,
+      status: updated!.status,
     });
     return this.toOrderDto(updated!, restaurant?.name || '', restaurant || undefined);
   }
@@ -588,6 +670,76 @@ export class OrdersService {
       if (!byKot && !byOrder) return kotNumber;
     }
     throw new ConflictException('Could not allocate KOT number. Retry.');
+  }
+
+  private async notifyStatusQuietly(params: {
+    customerId?: string | null;
+    restaurantId: string;
+    restaurantName: string;
+    orderId: string;
+    orderNumber: string;
+    status: OrderStatus;
+  }) {
+    try {
+      await this.push.notifyOrderStatus(params);
+    } catch {
+      // Status updates must not fail because of notification delivery.
+    }
+  }
+
+  private async resolveCouponDiscount(
+    restaurantId: string,
+    customerId: string,
+    code: string,
+    subtotal: Prisma.Decimal,
+  ) {
+    const now = new Date();
+    const grant = await this.prisma.customerCoupon.findFirst({
+      where: {
+        customerId,
+        status: CustomerCouponStatus.AVAILABLE,
+        coupon: {
+          restaurantId,
+          code,
+          isActive: true,
+          startsAt: { lte: now },
+          OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+        },
+      },
+      include: { coupon: true },
+    });
+    if (!grant) {
+      throw new BadRequestException('This coupon is not available for your device.');
+    }
+    const coupon = grant.coupon;
+    if (coupon.usageLimit != null && coupon.usedCount >= coupon.usageLimit) {
+      throw new BadRequestException('This coupon has reached its usage limit.');
+    }
+    if (
+      coupon.minimumOrderValue != null &&
+      subtotal.lessThan(coupon.minimumOrderValue)
+    ) {
+      throw new BadRequestException(
+        `This coupon requires a minimum order of ₹${Number(coupon.minimumOrderValue)}.`,
+      );
+    }
+
+    let discount = new Prisma.Decimal(0);
+    if (coupon.discountType === CouponDiscountType.PERCENT) {
+      discount = subtotal.mul(coupon.discountValue).div(100);
+      if (coupon.maximumDiscount != null && discount.greaterThan(coupon.maximumDiscount)) {
+        discount = coupon.maximumDiscount;
+      }
+    } else {
+      discount = coupon.discountValue;
+    }
+    if (discount.greaterThan(subtotal)) discount = subtotal;
+
+    return {
+      couponId: coupon.id,
+      customerCouponId: grant.id,
+      discountAmount: discount,
+    };
   }
 
   private toOrderDto(

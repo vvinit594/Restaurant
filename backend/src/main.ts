@@ -31,6 +31,8 @@ const CORS_ALLOWED_HEADERS = [
   'Accept',
   'Origin',
   'X-Requested-With',
+  'X-Device-Id',
+  'X-Device-Secret',
 ];
 
 function buildAllowedOrigins(frontendOriginEnv?: string) {

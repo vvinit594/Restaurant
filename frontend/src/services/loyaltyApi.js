@@ -82,3 +82,46 @@ export function updateLoyaltyProgram(programType, payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function getEngagementCustomers(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      qs.set(key, String(value));
+    }
+  });
+  return apiRequest(`/loyalty/engagement/customers${qs.toString() ? `?${qs}` : ''}`, {
+    method: 'GET',
+    headers: authHeaders('viewLoyalty'),
+  });
+}
+
+export function getEngagementCoupons() {
+  return apiRequest('/loyalty/engagement/coupons', {
+    method: 'GET',
+    headers: authHeaders('viewLoyalty'),
+  });
+}
+
+export function createEngagementCoupon(payload) {
+  return apiRequest('/loyalty/engagement/coupons', {
+    method: 'POST',
+    headers: authHeaders('sendLoyaltyOffers'),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getEngagementCampaigns() {
+  return apiRequest('/loyalty/engagement/campaigns', {
+    method: 'GET',
+    headers: authHeaders('viewLoyalty'),
+  });
+}
+
+export function sendEngagementNotification(payload) {
+  return apiRequest('/loyalty/engagement/notifications/send', {
+    method: 'POST',
+    headers: authHeaders('sendLoyaltyOffers'),
+    body: JSON.stringify(payload),
+  });
+}

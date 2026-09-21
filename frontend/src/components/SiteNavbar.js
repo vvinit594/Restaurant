@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import Loader from './Loader';
 import { getPublicRestaurants } from '../services/publicRestaurantsApi';
 import { useRestaurantAuth } from '../restaurant/auth/RestaurantAuthContext';
+import { useCustomerDevice } from '../customer/CustomerDeviceContext';
 
 export default function SiteNavbar({ cartCount = 0, onCartClick }) {
   const { isAuthenticated, bootstrapping } = useRestaurantAuth();
+  const { unreadCount } = useCustomerDevice();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [loginMenuOpen, setLoginMenuOpen] = useState(false);
@@ -220,6 +222,33 @@ export default function SiteNavbar({ cartCount = 0, onCartClick }) {
               </span>
             </button>
           ) : null}
+
+          <Link
+            to="/account"
+            className="site-navbar-icon-btn"
+            aria-label="Account"
+            onClick={closeAll}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="3.2" />
+              <path d="M5 19c1.6-3.2 4.1-4.8 7-4.8s5.4 1.6 7 4.8" />
+            </svg>
+          </Link>
+          <Link
+            to="/account/notifications"
+            className="site-navbar-icon-btn"
+            aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+            onClick={closeAll}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 16v-5a6 6 0 1 0-12 0v5" />
+              <path d="M5 16h14" />
+              <path d="M10 19a2 2 0 0 0 4 0" />
+            </svg>
+            {unreadCount > 0 ? (
+              <span className="site-navbar-icon-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+            ) : null}
+          </Link>
 
           <div className="site-navbar-login-wrap">
             <button

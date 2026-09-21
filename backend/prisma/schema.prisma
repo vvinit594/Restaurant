@@ -123,6 +123,8 @@ model User {
   salesProfile          SalesPerson?
   loyaltyCustomers      LoyaltyCustomer[]      @relation("LoyaltyCustomerCreatedBy")
   loyaltyOffersSent     LoyaltyOfferMessage[]  @relation("LoyaltyOfferSentBy")
+  couponsCreated        Coupon[]               @relation("CouponCreatedBy")
+  pushCampaignsSent     PushCampaign[]         @relation("PushCampaignSentBy")
 
   @@map("users")
 }
@@ -233,6 +235,10 @@ model Restaurant {
   loyaltyCustomers LoyaltyCustomer[]
   loyaltyOffers    LoyaltyOfferMessage[]
   loyaltyPrograms  RestaurantLoyaltyProgram[]
+  restaurantCustomers RestaurantCustomer[]
+  coupons             Coupon[]
+  customerNotifications CustomerNotification[]
+  pushCampaigns         PushCampaign[]
 
   @@index([createdByUserId])
   @@index([salesPersonId])
@@ -528,6 +534,38 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum CouponDiscountType {
+  PERCENT
+  FIXED
+}
+
+enum CustomerCouponStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+}
+
+enum CustomerNotificationType {
+  ORDER_STATUS
+  OFFER
+  COUPON
+  LOYALTY
+  PROMO
+}
+
+enum PushCampaignTargeting {
+  ALL_ELIGIBLE
+  PREVIOUSLY_ORDERED
+  INDIVIDUAL
+}
+
+enum PushCampaignStatus {
+  PENDING
+  SENT
+  PARTIAL
+  FAILED
+}
+
 model DiningTable {
   id           String    @id @default(cuid())
   restaurantId String
@@ -562,6 +600,9 @@ model Order {
   total          Decimal     @db.Decimal(10, 2)
   notes          String?
   idempotencyKey String?
+  customerId     String?
+  customerDeviceId String?
+  couponId       String?
   placedAt       DateTime    @default(now())
   acceptedAt     DateTime?
   completedAt    DateTime?
@@ -569,14 +610,20 @@ model Order {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  restaurant Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  table      DiningTable  @relation(fields: [tableId], references: [id])
-  items      OrderItem[]
+  restaurant     Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table          DiningTable     @relation(fields: [tableId], references: [id])
+  items          OrderItem[]
+  customer       Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerDevice CustomerDevice? @relation(fields: [customerDeviceId], references: [id], onDelete: SetNull)
+  coupon         Coupon?         @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  notifications  CustomerNotification[]
 
   @@unique([restaurantId, idempotencyKey])
   @@index([restaurantId, status, createdAt])
   @@index([restaurantId, createdAt])
   @@index([tableId])
+  @@index([customerId, createdAt])
+  @@index([customerId, status, createdAt])
   @@map("orders")
 }
 
@@ -596,5 +643,181 @@ model OrderItem {
   @@index([orderId])
   @@index([dishId])
   @@map("order_items")
+}
+
+/// Anonymous diner identity. One customer may have many devices.
+model Customer {
+  id          String   @id @default(cuid())
+  displayName String?
+  phone       String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  devices       CustomerDevice[]
+  orders        Order[]
+  restaurants   RestaurantCustomer[]
+  coupons       CustomerCoupon[]
+  notifications CustomerNotification[]
+
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model CustomerDevice {
+  id         String   @id @default(cuid())
+  customerId String
+  publicId   String   @unique
+  secretHash String
+  userAgent  String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer          Customer                   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  pushSubscriptions CustomerPushSubscription[]
+
+  @@index([customerId])
+  @@index([lastSeenAt])
+  @@map("customer_devices")
+}
+
+model CustomerPushSubscription {
+  id        String   @id @default(cuid())
+  deviceId  String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  device CustomerDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@map("customer_push_subscriptions")
+}
+
+model RestaurantCustomer {
+  id            String   @id @default(cuid())
+  restaurantId  String
+  customerId    String
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  lastOrderedAt DateTime?
+  orderCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, customerId])
+  @@index([restaurantId, lastOrderedAt])
+  @@index([restaurantId, lastSeenAt])
+  @@index([customerId])
+  @@map("restaurant_customers")
+}
+
+model Coupon {
+  id                String             @id @default(cuid())
+  restaurantId      String
+  title             String
+  description       String?
+  discountType      CouponDiscountType
+  discountValue     Decimal            @db.Decimal(10, 2)
+  code              String
+  minimumOrderValue Decimal?           @db.Decimal(10, 2)
+  maximumDiscount   Decimal?           @db.Decimal(10, 2)
+  startsAt          DateTime           @default(now())
+  expiresAt         DateTime?
+  usageLimit        Int?
+  usedCount         Int                @default(0)
+  isActive          Boolean            @default(true)
+  createdByUserId   String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  createdBy  User?            @relation("CouponCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  grants     CustomerCoupon[]
+  orders     Order[]
+  notifications CustomerNotification[]
+  campaigns     PushCampaign[]
+
+  @@unique([restaurantId, code])
+  @@index([restaurantId, isActive, expiresAt])
+  @@index([restaurantId, createdAt])
+  @@map("coupons")
+}
+
+model CustomerCoupon {
+  id         String               @id @default(cuid())
+  couponId   String
+  customerId String
+  status     CustomerCouponStatus @default(AVAILABLE)
+  usedAt     DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  coupon   Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, customerId])
+  @@index([customerId, status, createdAt])
+  @@index([couponId, status])
+  @@map("customer_coupons")
+}
+
+model CustomerNotification {
+  id             String                   @id @default(cuid())
+  customerId     String
+  restaurantId   String?
+  type           CustomerNotificationType
+  title          String
+  message        String
+  orderId        String?
+  couponId       String?
+  campaignId     String?
+  readAt         DateTime?
+  createdAt      DateTime                 @default(now())
+
+  customer   Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant?  @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  order      Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  coupon     Coupon?      @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  campaign   PushCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, readAt, createdAt])
+  @@index([customerId, createdAt])
+  @@index([restaurantId, createdAt])
+  @@map("customer_notifications")
+}
+
+model PushCampaign {
+  id             String                 @id @default(cuid())
+  restaurantId   String
+  title          String
+  message        String
+  targeting      PushCampaignTargeting
+  couponId       String?
+  recipientCount Int                    @default(0)
+  deliveredCount Int                    @default(0)
+  failedCount    Int                    @default(0)
+  status         PushCampaignStatus     @default(PENDING)
+  sentByUserId   String?
+  sentAt         DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  restaurant    Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  coupon        Coupon?                @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  sentBy        User?                  @relation("PushCampaignSentBy", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  notifications CustomerNotification[]
+
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, status, createdAt])
+  @@map("push_campaigns")
 }
 

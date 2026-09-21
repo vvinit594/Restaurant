@@ -4,6 +4,7 @@ import StatCard from '../admin/components/StatCard';
 import ConfirmDialog from '../admin/components/ConfirmDialog';
 import { useToast } from '../admin/components/Toast';
 import { useRestaurantAuth } from './auth/RestaurantAuthContext';
+import RestaurantEngagementTab from './RestaurantEngagementTab';
 import {
   createLoyaltyCustomer,
   deleteLoyaltyCustomer,
@@ -54,7 +55,7 @@ const INITIAL_OFFER = {
 export default function RestaurantLoyaltyPage() {
   const { user, permissions } = useRestaurantAuth();
   const { push } = useToast();
-  const [view, setView] = useState('customers');
+  const [view, setView] = useState('engagement');
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [listLoading, setListLoading] = useState(true);
@@ -316,7 +317,7 @@ export default function RestaurantLoyaltyPage() {
         <div>
           <h1>Loyalty Program</h1>
           <p className="admin-muted">
-            Build customer relationships, send offers and reward returning customers.
+            Customer engagement and offers. Reach diners on their device with push notifications and coupons.
           </p>
         </div>
       </div>
@@ -324,10 +325,17 @@ export default function RestaurantLoyaltyPage() {
       <div className="loyalty-view-toggle" role="tablist" aria-label="Loyalty views">
         <button
           type="button"
+          className={`loyalty-view-tab ${view === 'engagement' ? 'active' : ''}`}
+          onClick={() => setView('engagement')}
+        >
+          Customer Engagement
+        </button>
+        <button
+          type="button"
           className={`loyalty-view-tab ${view === 'customers' ? 'active' : ''}`}
           onClick={() => setView('customers')}
         >
-          Customers
+          Saved contacts
         </button>
         <button
           type="button"
@@ -337,6 +345,10 @@ export default function RestaurantLoyaltyPage() {
           Loyalty Programs
         </button>
       </div>
+
+      {view === 'engagement' ? (
+        <RestaurantEngagementTab canSend={permissions?.sendLoyaltyOffers} />
+      ) : null}
 
       {view === 'customers' ? (
         <>

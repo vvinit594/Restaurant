@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Loader from './Loader';
 import { getPublicRestaurantTables, placePublicOrder } from '../services/ordersApi';
 
@@ -16,6 +17,7 @@ export default function OrderCheckoutModal({
   const [step, setStep] = useState('table'); // table | confirm | success
   const [tables, setTables] = useState([]);
   const [tableId, setTableId] = useState('');
+  const [couponCode, setCouponCode] = useState('');
   const [loadingTables, setLoadingTables] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -33,6 +35,7 @@ export default function OrderCheckoutModal({
     setError('');
     setPlaced(null);
     setTableId('');
+    setCouponCode('');
     let alive = true;
     (async () => {
       setLoadingTables(true);
@@ -87,6 +90,7 @@ export default function OrderCheckoutModal({
       const order = await placePublicOrder(restaurantSlug, {
         tableId,
         idempotencyKey,
+        couponCode: couponCode.trim() || undefined,
         items: items.map((i) => ({
           dishId: i.dishId,
           quantity: i.quantity,
@@ -172,6 +176,15 @@ export default function OrderCheckoutModal({
               <span>Total</span>
               <strong>₹{subtotal}</strong>
             </div>
+            <label className="order-coupon-field">
+              Coupon code
+              <input
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+                placeholder="Optional"
+                disabled={submitting}
+              />
+            </label>
             {error ? <div className="order-error">{error}</div> : null}
             <div className="order-checkout-actions">
               <button
@@ -205,6 +218,9 @@ export default function OrderCheckoutModal({
               <p className="order-cart-rest">Your order has been sent to the restaurant.</p>
             </div>
             <div className="order-checkout-actions">
+              <Link to="/account/orders/live" className="admin-btn admin-btn-ghost">
+                Track order
+              </Link>
               <button type="button" className="admin-btn admin-btn-primary" onClick={onClose}>
                 Done
               </button>

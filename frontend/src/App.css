@@ -1745,6 +1745,44 @@ body {
 }
 
 /* ===== Ordering ===== */
+.site-navbar-icon-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: rgba(217, 119, 6, 0.12);
+  color: #fde68a;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.site-navbar-icon-btn:hover,
+.site-navbar-icon-btn:focus-visible {
+  background: var(--primary);
+  color: #fff;
+  outline: none;
+}
+
+.site-navbar-icon-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #1c1917;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
 .site-navbar-cart {
   position: relative;
   display: inline-flex;
@@ -1963,6 +2001,23 @@ body {
   align-items: center;
   margin-bottom: 12px;
   font-size: 1.05rem;
+}
+
+.order-coupon-field {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.order-coupon-field input {
+  border-radius: 10px;
+  border: 1px solid rgba(120, 85, 52, 0.25);
+  background: #fff;
+  color: #1c1917;
+  padding: 10px 12px;
+  font: inherit;
 }
 
 .order-cart-cta {

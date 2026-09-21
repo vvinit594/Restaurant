@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { deviceHeaders } from './customerDevice';
 import {
   getRestaurantSessionSync,
   requirePermission,
@@ -27,6 +28,7 @@ export async function placePublicOrder(slug, payload) {
     `/public/restaurants/${encodeURIComponent(slug)}/orders`,
     {
       method: 'POST',
+      headers: deviceHeaders(),
       body: JSON.stringify(payload),
     },
   );

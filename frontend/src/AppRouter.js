@@ -14,6 +14,16 @@ import AdminSalesPersonsPage from './admin/AdminSalesPersonsPage';
 import { AdminAuthProvider } from './admin/auth/AdminAuthContext';
 import ProtectedAdminRoute from './admin/auth/ProtectedAdminRoute';
 import { ToastProvider } from './admin/components/Toast';
+import { CustomerDeviceProvider } from './customer/CustomerDeviceContext';
+import CustomerPanelLayout from './customer/CustomerPanelLayout';
+import CustomerOverviewPage from './customer/CustomerOverviewPage';
+import CustomerOrdersPage from './customer/CustomerOrdersPage';
+import CustomerOrderDetailPage from './customer/CustomerOrderDetailPage';
+import CustomerTransactionsPage from './customer/CustomerTransactionsPage';
+import CustomerCouponsPage from './customer/CustomerCouponsPage';
+import CustomerNotificationsPage from './customer/CustomerNotificationsPage';
+import PushPermissionPrompt from './customer/PushPermissionPrompt';
+import './customer/customer.css';
 import { RestaurantAuthProvider } from './restaurant/auth/RestaurantAuthContext';
 import ProtectedRestaurantRoute from './restaurant/auth/ProtectedRestaurantRoute';
 import RestaurantLogin from './restaurant/RestaurantLogin';
@@ -50,9 +60,20 @@ export default function AppRouter() {
         <RestaurantAuthProvider>
           <SalesAuthProvider>
           <ToastProvider>
+            <CustomerDeviceProvider>
+            <PushPermissionPrompt />
             <Routes>
               <Route path="/" element={<CustomerApp />} />
               <Route path="/restaurants" element={<RestaurantsListingPage />} />
+              <Route path="/account" element={<CustomerPanelLayout />}>
+                <Route index element={<CustomerOverviewPage />} />
+                <Route path="orders/live" element={<CustomerOrdersPage live />} />
+                <Route path="orders/:orderId" element={<CustomerOrderDetailPage />} />
+                <Route path="orders" element={<CustomerOrdersPage />} />
+                <Route path="transactions" element={<CustomerTransactionsPage />} />
+                <Route path="coupons" element={<CustomerCouponsPage />} />
+                <Route path="notifications" element={<CustomerNotificationsPage />} />
+              </Route>
 
               <Route path="/admin-login" element={<AdminLogin />} />
               <Route
@@ -254,6 +275,7 @@ export default function AppRouter() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </CustomerDeviceProvider>
           </ToastProvider>
           </SalesAuthProvider>
         </RestaurantAuthProvider>

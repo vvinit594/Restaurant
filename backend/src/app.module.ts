@@ -8,6 +8,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PublicRestaurantsModule } from './public/restaurants/public-restaurants.module';
+import { CustomerModule } from './customer/customer.module';
 import { QrModule } from './qr/qr.module';
 import { RestaurantDishesModule } from './restaurants/dishes/restaurant-dishes.module';
 import { SalesModule } from './sales/sales.module';
@@ -22,6 +23,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     UsersModule,
     AuthModule,
+    CustomerModule,
     AdminRestaurantsModule,
     LoyaltyModule,
     PublicRestaurantsModule,

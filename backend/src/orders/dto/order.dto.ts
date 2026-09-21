@@ -48,6 +48,15 @@ export class CreatePublicOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @Transform(({ value }) =>
+    value == null || String(value).trim() === ''
+      ? undefined
+      : String(value).trim().toUpperCase().slice(0, 40),
+  )
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
 }
 
 export class UpdateOrderStatusDto {

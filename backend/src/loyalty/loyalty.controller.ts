@@ -23,6 +23,12 @@ import {
   UpdateLoyaltyCustomerDto,
   UpdateLoyaltyProgramDto,
 } from './dto/loyalty.dto';
+import {
+  CreateCouponDto,
+  EngagementCustomerQueryDto,
+  SendPushNotificationDto,
+} from './dto/engagement.dto';
+import { EngagementService } from './engagement.service';
 import { LoyaltyService } from './loyalty.service';
 
 @Controller('loyalty')
@@ -33,12 +39,59 @@ import { LoyaltyService } from './loyalty.service';
   AppRole.RESTAURANT_STAFF,
 )
 export class LoyaltyController {
-  constructor(private readonly loyalty: LoyaltyService) {}
+  constructor(
+    private readonly loyalty: LoyaltyService,
+    private readonly engagement: EngagementService,
+  ) {}
 
   @Get('stats')
   stats(@CurrentUser() user: any, @Res({ passthrough: true }) res: Response) {
     res.setHeader('Cache-Control', 'private, no-store');
     return this.loyalty.getStats(user);
+  }
+
+  @Get('engagement/customers')
+  engagementCustomers(
+    @CurrentUser() user: any,
+    @Query() query: EngagementCustomerQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.engagement.listCustomers(user, query);
+  }
+
+  @Get('engagement/coupons')
+  engagementCoupons(
+    @CurrentUser() user: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.engagement.listCoupons(user);
+  }
+
+  @Post('engagement/coupons')
+  createEngagementCoupon(
+    @CurrentUser() user: any,
+    @Body() dto: CreateCouponDto,
+  ) {
+    return this.engagement.createCoupon(user, dto);
+  }
+
+  @Get('engagement/campaigns')
+  engagementCampaigns(
+    @CurrentUser() user: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.engagement.listCampaigns(user);
+  }
+
+  @Post('engagement/notifications/send')
+  sendEngagementNotification(
+    @CurrentUser() user: any,
+    @Body() dto: SendPushNotificationDto,
+  ) {
+    return this.engagement.sendNotification(user, dto);
   }
 
   @Get('customers')
