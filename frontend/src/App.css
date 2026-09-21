@@ -74,6 +74,7 @@ body {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .site-navbar-logo {
@@ -109,11 +110,97 @@ body {
   border-color: var(--primary);
 }
 
+.site-navbar-login-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.site-navbar-menu-btn {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(217, 119, 6, 0.14);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.site-navbar-menu-btn span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: #fde68a;
+}
+
+.site-navbar-menu-btn:hover,
+.site-navbar-menu-btn.active,
+.site-navbar-menu-btn:focus-visible {
+  background: var(--primary);
+  border-color: var(--primary);
+  outline: none;
+}
+
+.site-navbar-menu-btn:hover span,
+.site-navbar-menu-btn.active span,
+.site-navbar-menu-btn:focus-visible span {
+  background: #fff;
+}
+
+.site-navbar-login-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  background: rgba(28, 18, 12, 0.96);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  z-index: 130;
+  animation: restaurantsPopupIn 0.18s ease;
+}
+
+.site-navbar-login-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  color: #fde68a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.site-navbar-login-menu-item:hover,
+.site-navbar-login-menu-item:focus-visible {
+  background: rgba(217, 119, 6, 0.28);
+  color: #fff;
+  outline: none;
+}
+
 .site-navbar-actions {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .site-navbar-link-btn {
@@ -1184,6 +1271,21 @@ body {
   .site-navbar-link-btn {
     padding: 8px 12px;
     font-size: 13px;
+  }
+
+  .site-navbar-menu-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .site-navbar-login-menu {
+    right: 0;
+  }
+
+  .site-navbar-login-menu-item {
+    padding: 14px 14px;
+    font-size: 15px;
+    min-height: 44px;
   }
 
   .site-navbar-actions {
