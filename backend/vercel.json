@@ -1,13 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nestjs",
-  "installCommand": "npm install",
-  "buildCommand": "prisma generate && nest build",
-  "outputFileTracingIncludes": {
-    "*": [
-      "node_modules/.prisma/client/**",
-      "node_modules/@prisma/client/**",
-      "prisma/**"
-    ]
-  }
+  "installCommand": "npm install"
 }

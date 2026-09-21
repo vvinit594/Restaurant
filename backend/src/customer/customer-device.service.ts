@@ -116,11 +116,6 @@ export class CustomerDeviceService {
     });
     if (!device || !secretsMatch(secret, device.secretHash)) return null;
 
-    await this.prisma.customerDevice.update({
-      where: { id: device.id },
-      data: { lastSeenAt: new Date() },
-    });
-
     return {
       customerId: device.customerId,
       deviceId: device.id,
