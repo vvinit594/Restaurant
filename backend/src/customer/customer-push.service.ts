@@ -22,8 +22,15 @@ export class CustomerPushService {
     const subject =
       this.config.get<string>('VAPID_SUBJECT') || 'mailto:hello@dilyum.live';
     if (publicKey && privateKey) {
-      webpush.setVapidDetails(subject, publicKey, privateKey);
-      this.configured = true;
+      try {
+        webpush.setVapidDetails(subject.trim(), publicKey.trim(), privateKey.trim());
+        this.configured = true;
+      } catch (err: any) {
+        this.logger.error(
+          `Invalid VAPID keys; push disabled. ${err?.message || err}`,
+        );
+        this.configured = false;
+      }
     }
   }
 

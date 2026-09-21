@@ -13,6 +13,7 @@ import express from 'express';
 import { config as loadEnv } from 'dotenv';
 
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 // Local .env before reading FRONTEND_ORIGIN for early CORS.
 loadEnv();
@@ -131,6 +132,7 @@ async function bootstrap() {
       },
     }),
   );
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.enableCors({
     origin: (
