@@ -1,6 +1,7 @@
 const PUBLIC_KEY = 'dilyum.device.publicId';
 const SECRET_KEY = 'dilyum.device.secret';
-const PUSH_DISMISS_KEY = 'dilyum.push.prompt.dismissedAt';
+const PUSH_SESSION_DISMISS_KEY = 'dilyum.push.prompt.sessionDismissed';
+const PUSH_DENIED_HINT_KEY = 'dilyum.push.deniedHint.dismissed';
 
 function canUseStorage() {
   try {
@@ -33,18 +34,37 @@ export function deviceHeaders() {
   };
 }
 
+function sessionStore() {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Maybe Later lasts for this browser tab session, then the prompt can return. */
 export function wasPushPromptDismissed() {
-  if (!canUseStorage()) return false;
-  const raw = localStorage.getItem(PUSH_DISMISS_KEY);
-  if (!raw) return false;
-  const at = Number(raw);
-  if (!Number.isFinite(at)) return true;
-  return Date.now() - at < 14 * 24 * 60 * 60 * 1000;
+  const store = sessionStore();
+  if (!store) return false;
+  return store.getItem(PUSH_SESSION_DISMISS_KEY) === '1';
 }
 
 export function dismissPushPrompt() {
-  if (!canUseStorage()) return;
-  localStorage.setItem(PUSH_DISMISS_KEY, String(Date.now()));
+  const store = sessionStore();
+  if (!store) return;
+  store.setItem(PUSH_SESSION_DISMISS_KEY, '1');
+}
+
+export function wasDeniedHintDismissed() {
+  const store = sessionStore();
+  if (!store) return false;
+  return store.getItem(PUSH_DENIED_HINT_KEY) === '1';
+}
+
+export function dismissDeniedHint() {
+  const store = sessionStore();
+  if (!store) return;
+  store.setItem(PUSH_DENIED_HINT_KEY, '1');
 }
 
 export function randomHex(bytes) {

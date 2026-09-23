@@ -204,7 +204,7 @@ export default function RestaurantEngagementTab({ canSend }) {
                       <td>{row.lastOrderedAt ? new Date(row.lastOrderedAt).toLocaleString('en-IN') : '—'}</td>
                       <td>{row.pushEnabled ? 'Enabled' : 'Not enabled'}</td>
                       <td>
-                        {canSend ? (
+                        {row.pushEnabled && canSend ? (
                           <button
                             type="button"
                             className="admin-link-btn"
@@ -219,6 +219,8 @@ export default function RestaurantEngagementTab({ canSend }) {
                           >
                             Send notification
                           </button>
+                        ) : !row.pushEnabled ? (
+                          <span className="admin-muted">Push not enabled</span>
                         ) : null}
                       </td>
                     </tr>
@@ -299,7 +301,7 @@ export default function RestaurantEngagementTab({ canSend }) {
                 Customer
                 <select value={sendForm.customerId} onChange={(e) => setSendForm((p) => ({ ...p, customerId: e.target.value }))}>
                   <option value="">Select customer</option>
-                  {customers.map((row) => (
+                  {customers.filter((row) => row.pushEnabled).map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.displayName} ({row.orderCount} orders)
                     </option>
