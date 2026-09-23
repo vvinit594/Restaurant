@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Loader from '../components/Loader';
 import { getSalesCommission } from '../services/salesApi';
+import { formatInr } from './formatInr';
 
 export default function SalesCommissionPage() {
   const [data, setData] = useState(null);
@@ -28,7 +29,8 @@ export default function SalesCommissionPage() {
     };
   }, []);
 
-  const s = data?.summary || {};
+  const rows = Array.isArray(data?.breakdown) ? data.breakdown : [];
+  const rules = Array.isArray(data?.rules) ? data.rules : [];
 
   return (
     <div className="admin-page">
@@ -36,7 +38,7 @@ export default function SalesCommissionPage() {
         <div>
           <h1>Commission</h1>
           <p className="admin-muted">
-            Configurable plan-based commission. Rules can be updated without rebuilding the panel.
+            Earned from the restaurants you have added. Totals are calculated on the server.
           </p>
         </div>
       </div>
@@ -46,84 +48,71 @@ export default function SalesCommissionPage() {
 
       {!loading && data ? (
         <>
-          {!data.rulesConfigured ? (
-            <div className="admin-empty">
-              <h3>Commission rules coming soon</h3>
-              <p>
-                {data.message ||
-                  'Once plan commission rules are configured, earnings and history will appear here.'}
-              </p>
+          <div className="sales-metrics-grid">
+            <div className="sales-metric-card sales-metric-accent">
+              <span className="sales-metric-label">Commission Earned</span>
+              <strong className="sales-metric-value">{formatInr(data.totalCommission)}</strong>
             </div>
-          ) : (
-            <div className="sales-metrics-grid">
-              <div className="sales-metric-card">
-                <span className="sales-metric-label">Total Earned</span>
-                <strong className="sales-metric-value">₹{Number(s.totalEarned || 0).toFixed(2)}</strong>
-              </div>
-              <div className="sales-metric-card">
-                <span className="sales-metric-label">Pending</span>
-                <strong className="sales-metric-value">₹{Number(s.pending || 0).toFixed(2)}</strong>
-              </div>
-              <div className="sales-metric-card">
-                <span className="sales-metric-label">Paid</span>
-                <strong className="sales-metric-value">₹{Number(s.paid || 0).toFixed(2)}</strong>
-              </div>
-              <div className="sales-metric-card sales-metric-accent">
-                <span className="sales-metric-label">This Month</span>
-                <strong className="sales-metric-value">₹{Number(s.thisMonth || 0).toFixed(2)}</strong>
-              </div>
+            <div className="sales-metric-card">
+              <span className="sales-metric-label">Restaurants Added</span>
+              <strong className="sales-metric-value">{data.restaurantCount ?? 0}</strong>
             </div>
-          )}
+            <div className="sales-metric-card">
+              <span className="sales-metric-label">Current Tier</span>
+              <strong className="sales-metric-value sales-metric-text">{data.currentTier}</strong>
+            </div>
+            <div className="sales-metric-card">
+              <span className="sales-metric-label">Additional Restaurant Rate</span>
+              <strong className="sales-metric-value sales-metric-text">
+                {formatInr(data.additionalRestaurantRate)} / restaurant
+              </strong>
+            </div>
+          </div>
 
-          {data.rulesConfigured && (data.rules || []).length > 0 ? (
-            <section className="sales-panel-card" style={{ marginTop: 16 }}>
-              <h2>Active rules</h2>
+          <div className="sales-dash-grid">
+            <section className="admin-panel">
+              <h2>Commission rules</h2>
               <ul className="sales-plan-list">
-                {data.rules.map((r) => (
-                  <li key={r.planCode}>
-                    <span>
-                      {r.planCode} ({r.type})
-                    </span>
+                {rules.map((rule) => (
+                  <li key={rule.label}>
+                    <span>{rule.label}</span>
                     <strong>
-                      {r.type === 'PERCENT' ? `${r.value}%` : `₹${Number(r.value).toFixed(2)}`}
+                      {rule.additionalRate != null
+                        ? `+${formatInr(rule.additionalRate)} per additional restaurant`
+                        : formatInr(rule.totalCommission)}
                     </strong>
                   </li>
                 ))}
               </ul>
+              <p className="admin-muted" style={{ marginTop: 12 }}>
+                After the 5th restaurant, each additional restaurant adds{' '}
+                {formatInr(data.additionalRestaurantRate)}. These amounts are totals, not a
+                multiple of the 5-restaurant tier.
+              </p>
             </section>
-          ) : null}
 
-          <section className="sales-panel-card" style={{ marginTop: 16 }}>
-            <h2>History</h2>
-            {(data.history || []).length === 0 ? (
-              <p className="admin-muted">No commission records yet.</p>
-            ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Restaurant</th>
-                      <th>Plan</th>
-                      <th>Commission</th>
-                      <th>Status</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.history.map((c) => (
-                      <tr key={c.id}>
-                        <td>{c.restaurantName}</td>
-                        <td>{c.planCode}</td>
-                        <td>₹{Number(c.amount).toFixed(2)}</td>
-                        <td>{c.status}</td>
-                        <td>{new Date(c.createdAt).toLocaleDateString()}</td>
-                      </tr>
+            <section className="admin-panel">
+              <h2>Commission breakdown</h2>
+              {rows.length === 0 ? (
+                <p className="admin-muted">No restaurants added yet. Commission earned is {formatInr(0)}.</p>
+              ) : (
+                <>
+                  <ul className="sales-commission-breakdown">
+                    {rows.map((row) => (
+                      <li key={row.restaurantNumber}>
+                        <span>{row.label}</span>
+                        <strong>{formatInr(row.amount)}</strong>
+                      </li>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+                  </ul>
+                  <div className="sales-commission-total">
+                    <span>Total earned</span>
+                    <strong>{formatInr(data.totalCommission)}</strong>
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
         </>
       ) : null}
     </div>

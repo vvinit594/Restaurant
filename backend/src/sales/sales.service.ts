@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  CommissionStatus,
   QrCodeStatus,
   RestaurantStatus,
   SalesLeadStatus,
@@ -17,12 +16,13 @@ import { auditLog } from '../common/audit-log';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
 import { CommissionService } from './commission.service';
+import { calculateRestaurantCommission } from './restaurant-commission';
 import { SalesContextService } from './sales-context.service';
+import { normalizeUpiId } from './upi-id';
 import {
   parseMonthlyPriceLabel,
   startOfMonth,
   startOfWeek,
-  startOfYear,
 } from './sales.utils';
 
 @Injectable()
@@ -43,6 +43,7 @@ export class SalesService {
       name: sp.user.name,
       email: sp.user.email,
       phone: sp.phone || sp.user.phone || '',
+      upiId: sp.upiId || '',
       status: sp.status,
       joinedAt: sp.createdAt.toISOString(),
     };
@@ -50,11 +51,12 @@ export class SalesService {
 
   async updateProfile(
     user: { id: string; role: string },
-    body: { name?: string; phone?: string },
+    body: { name?: string; phone?: string; upiId?: string | null },
   ) {
     const sp = await this.salesContext.requireSalesPerson(user);
     const name = body.name != null ? String(body.name).trim() : undefined;
     const phone = body.phone != null ? String(body.phone).trim() : undefined;
+    const upiId = body.upiId !== undefined ? normalizeUpiId(body.upiId) : undefined;
 
     if (name !== undefined && !name) {
       throw new BadRequestException('Name cannot be empty.');
@@ -72,6 +74,7 @@ export class SalesService {
         where: { id: sp.id },
         data: {
           ...(phone !== undefined ? { phone: phone || null } : {}),
+          ...(upiId !== undefined ? { upiId } : {}),
         },
       }),
     ]);
@@ -251,13 +254,7 @@ export class SalesService {
       );
     }, 0);
 
-    const commissions = await this.prisma.commission.findMany({
-      where: { salesPersonId: sp.id },
-    });
-    const commissionEarned = commissions
-      .filter((c) => c.status !== CommissionStatus.CANCELLED)
-      .reduce((s, c) => s + Number(c.amount), 0);
-
+    const commission = calculateRestaurantCommission(nonArchived.length);
     const weekly = this.buildWeeklyOnboarding(nonArchived);
 
     return {
@@ -268,13 +265,13 @@ export class SalesService {
         qrCodesGenerated: qrCount,
         monthlyRevenue,
         subscriptionRevenue,
-        commissionEarned,
+        commissionEarned: commission.totalCommission,
         restaurantsAddedThisWeek: addedThisWeek.length,
         restaurantsAddedThisMonth: addedThisMonth.length,
         activeSubscriptions,
       },
       weeklyPerformance: weekly,
-      commissionRulesConfigured: (await this.commissionService.listRules()).length > 0,
+      commission,
     };
   }
 
@@ -407,58 +404,10 @@ export class SalesService {
 
   async getCommission(user: { id: string; role: string }) {
     const sp = await this.salesContext.requireSalesPerson(user);
-    const rules = await this.commissionService.listRules();
-    const rows = await this.prisma.commission.findMany({
-      where: { salesPersonId: sp.id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        restaurant: { select: { id: true, name: true } },
-      },
+    const restaurantCount = await this.prisma.restaurant.count({
+      where: this.addedRestaurantWhere(sp.id),
     });
-
-    const monthStart = startOfMonth();
-    const yearStart = startOfYear();
-
-    const sum = (list: typeof rows) =>
-      list.reduce((s, c) => s + Number(c.amount), 0);
-
-    const nonCancelled = rows.filter((c) => c.status !== CommissionStatus.CANCELLED);
-    const pending = rows.filter((c) => c.status === CommissionStatus.PENDING);
-    const approved = rows.filter((c) => c.status === CommissionStatus.APPROVED);
-    const paid = rows.filter((c) => c.status === CommissionStatus.PAID);
-
-    return {
-      rulesConfigured: rules.length > 0,
-      rules: rules.map((r) => ({
-        planCode: r.planCode,
-        type: r.type,
-        value: Number(r.value),
-      })),
-      summary: {
-        totalEarned: sum(nonCancelled),
-        pending: sum(pending),
-        approved: sum(approved),
-        paid: sum(paid),
-        thisMonth: sum(
-          nonCancelled.filter((c) => c.createdAt >= monthStart),
-        ),
-        thisYear: sum(nonCancelled.filter((c) => c.createdAt >= yearStart)),
-      },
-      history: rows.map((c) => ({
-        id: c.id,
-        restaurantId: c.restaurantId,
-        restaurantName: c.restaurant.name,
-        planCode: c.planCode,
-        amount: Number(c.amount),
-        status: c.status,
-        createdAt: c.createdAt.toISOString(),
-        paidAt: c.paidAt?.toISOString() || null,
-      })),
-      message:
-        rules.length === 0
-          ? 'Commission rules coming soon. History will appear once rules are configured.'
-          : null,
-    };
+    return calculateRestaurantCommission(restaurantCount);
   }
 
   async listLeads(user: { id: string; role: string }) {
@@ -637,9 +586,11 @@ export class SalesService {
       name: created.user.name,
       email: created.user.email,
       phone: created.profile.phone || '',
+      upiId: created.profile.upiId || '',
       status: created.profile.status,
       restaurantsAdded: 0,
       activeRestaurants: 0,
+      commissionEarned: 0,
       createdAt: created.profile.createdAt.toISOString(),
     };
   }
@@ -785,30 +736,46 @@ export class SalesService {
     return this.adminGetSalesPerson(id);
   }
 
+  /** Same set the Sales Dashboard labels "Restaurants Added". */
+  private addedRestaurantWhere(salesPersonId: string) {
+    return {
+      salesPersonId,
+      deletedAt: null,
+      NOT: { status: RestaurantStatus.ARCHIVED },
+    };
+  }
+
   private toAdminSalesPersonDto(r: {
     id: string;
     salesCode: string;
     phone: string | null;
+    upiId: string | null;
     status: SalesPersonStatus;
     createdAt: Date;
     user: { name: string; email: string; phone: string | null };
     restaurants: Array<{ status: RestaurantStatus }>;
     _count?: { leads?: number };
   }) {
-    const restaurantsAdded = r.restaurants.length;
-    const activeRestaurants = r.restaurants.filter(
+    const added = r.restaurants.filter(
+      (rest) => rest.status !== RestaurantStatus.ARCHIVED,
+    );
+    const restaurantsAdded = added.length;
+    const activeRestaurants = added.filter(
       (rest) => rest.status === RestaurantStatus.ACTIVE,
     ).length;
     const pendingRequestCount = r._count?.leads ?? 0;
+    const commission = calculateRestaurantCommission(restaurantsAdded);
     return {
       id: r.id,
       salesCode: r.salesCode,
       name: r.user.name,
       email: r.user.email,
       phone: r.phone || r.user.phone || '',
+      upiId: r.upiId || '',
       status: r.status,
       restaurantsAdded,
       activeRestaurants,
+      commissionEarned: commission.totalCommission,
       pendingRequestCount,
       createdAt: r.createdAt.toISOString(),
     };

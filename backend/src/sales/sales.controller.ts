@@ -96,7 +96,7 @@ export class SalesController {
   @Patch('profile')
   updateProfile(
     @CurrentUser() user: SafeUser,
-    @Body() body: { name?: string; phone?: string },
+    @Body() body: { name?: string; phone?: string; upiId?: string | null },
   ) {
     return this.salesService.updateProfile(user, body);
   }

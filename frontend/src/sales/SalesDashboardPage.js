@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Loader from '../components/Loader';
 import { getSalesDashboard } from '../services/salesApi';
+import { formatInr } from './formatInr';
 
 function MetricCard({ label, value, accent }) {
   return (
@@ -35,6 +36,30 @@ function WeeklyChart({ data }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function CommissionBreakdown({ commission }) {
+  const rows = Array.isArray(commission?.breakdown) ? commission.breakdown : [];
+  if (!rows.length) {
+    return <p className="admin-muted">Add a restaurant to start earning commission.</p>;
+  }
+  return (
+    <>
+      <p className="admin-muted">Commission breakdown</p>
+      <ul className="sales-commission-breakdown">
+        {rows.map((row) => (
+          <li key={row.restaurantNumber}>
+            <span>{row.label}</span>
+            <strong>{formatInr(row.amount)}</strong>
+          </li>
+        ))}
+      </ul>
+      <div className="sales-commission-total">
+        <span>Total earned</span>
+        <strong>{formatInr(commission.totalCommission)}</strong>
+      </div>
+    </>
   );
 }
 
@@ -94,7 +119,7 @@ export default function SalesDashboardPage() {
             <MetricCard label="Monthly Revenue" value={formatMoney(m.subscriptionRevenue)} />
             <MetricCard
               label="Commission Earned"
-              value={formatMoney(m.commissionEarned)}
+              value={formatInr(data.commission?.totalCommission ?? m.commissionEarned)}
               accent
             />
           </div>
@@ -115,18 +140,13 @@ export default function SalesDashboardPage() {
 
             <section className="admin-panel">
               <h2>Commission</h2>
-              {data.commissionRulesConfigured ? (
-                <>
-                  <p className="admin-muted">Earned from configured plan rules.</p>
-                  <div className="sales-commission-hero">{formatMoney(m.commissionEarned)}</div>
-                  <p className="admin-muted">Total commission (non-cancelled).</p>
-                </>
-              ) : (
-                <div className="admin-empty">
-                  <h3>Commission rules coming soon</h3>
-                  <p>Slot tiers and plan commissions will appear here once configured.</p>
-                </div>
-              )}
+              <p className="admin-muted">
+                Restaurants added: <strong>{data.commission?.restaurantCount ?? m.restaurantsAdded ?? 0}</strong>
+              </p>
+              <div className="sales-commission-hero">
+                {formatInr(data.commission?.totalCommission ?? m.commissionEarned)}
+              </div>
+              <CommissionBreakdown commission={data.commission} />
             </section>
           </div>
         </>

@@ -11,6 +11,7 @@ import {
 } from '../services/adminSalesApi';
 import ConfirmDialog from './components/ConfirmDialog';
 import { useToast } from './components/Toast';
+import { formatInr } from '../sales/formatInr';
 
 const EMPTY_FORM = {
   name: '',
@@ -215,14 +216,16 @@ export default function AdminSalesPersonsPage() {
 
       {!loading && rows.length > 0 ? (
         <div className="admin-table-wrap">
-          <table className="admin-table">
+          <table className="admin-table admin-table-wide">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Sales ID</th>
                 <th>Email</th>
                 <th>Phone</th>
+                <th>UPI ID</th>
                 <th>Restaurants Added</th>
+                <th>Commission</th>
                 <th>Request</th>
                 <th>Status</th>
                 <th>Joined</th>
@@ -247,7 +250,9 @@ export default function AdminSalesPersonsPage() {
                     <td>{row.salesCode}</td>
                     <td>{row.email}</td>
                     <td>{row.phone || '—'}</td>
+                    <td className="admin-upi-cell">{row.upiId || '—'}</td>
                     <td>{row.restaurantsAdded ?? 0}</td>
+                    <td>{formatInr(row.commissionEarned)}</td>
                     <td>
                       {pending > 0 ? (
                         <button
@@ -431,6 +436,14 @@ export default function AdminSalesPersonsPage() {
               <div>
                 <dt>Phone</dt>
                 <dd>{detail.phone || '—'}</dd>
+              </div>
+              <div>
+                <dt>UPI ID</dt>
+                <dd className="admin-upi-cell">{detail.upiId || '—'}</dd>
+              </div>
+              <div>
+                <dt>Commission Earned</dt>
+                <dd>{formatInr(detail.commissionEarned)}</dd>
               </div>
               <div>
                 <dt>Status</dt>

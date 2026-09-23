@@ -8,6 +8,7 @@ export default function SalesProfilePage() {
   const [profile, setProfile] = useState(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [upiId, setUpiId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -22,6 +23,7 @@ export default function SalesProfilePage() {
           setProfile(p);
           setName(p.name || '');
           setPhone(p.phone || '');
+          setUpiId(p.upiId || '');
           setError('');
         }
       } catch (err) {
@@ -39,8 +41,15 @@ export default function SalesProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const updated = await updateSalesProfile({ name, phone });
+      const trimmedUpi = upiId.trim();
+      if (trimmedUpi && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{1,255}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/.test(trimmedUpi)) {
+        push('Enter a valid UPI ID such as name@upi.', 'error');
+        setSaving(false);
+        return;
+      }
+      const updated = await updateSalesProfile({ name, phone, upiId: trimmedUpi });
       setProfile(updated);
+      setUpiId(updated.upiId || '');
       push('Profile updated.');
     } catch (err) {
       push(err.message || 'Could not update profile.', 'error');
@@ -89,6 +98,18 @@ export default function SalesProfilePage() {
                 onChange={(e) => setPhone(e.target.value)}
                 disabled={saving}
                 placeholder="Phone number"
+              />
+            </label>
+            <label className="admin-field">
+              <span>UPI ID</span>
+              <input
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                disabled={saving}
+                placeholder="name@upi"
+                autoComplete="off"
+                inputMode="email"
+                spellCheck={false}
               />
             </label>
             <label className="admin-field">

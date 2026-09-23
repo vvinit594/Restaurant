@@ -453,6 +453,9 @@
   border-collapse: collapse;
   min-width: 900px;
 }
+.admin-table.admin-table-wide {
+  min-width: 1180px;
+}
 
 .admin-table th,
 .admin-table td {
@@ -1997,6 +2000,34 @@
   font-weight: 700;
   color: #fb923c;
   margin: 12px 0 4px;
+}
+.sales-commission-breakdown {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 280px;
+  overflow: auto;
+}
+.sales-commission-breakdown li,
+.sales-commission-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sales-commission-total {
+  font-weight: 700;
+  border-bottom: 0;
+}
+.sales-metric-value.sales-metric-text {
+  font-size: 1.15rem;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.admin-upi-cell {
+  max-width: 180px;
+  word-break: break-all;
 }
 .sales-chart-empty {
   margin-top: 20px;
