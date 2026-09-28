@@ -5,6 +5,7 @@ import SubscriptionPlanCards from '../components/SubscriptionPlanCards';
 import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { createRestaurant, getSubscriptionPlans } from '../services/restaurantsApi';
+import { startAdminRestaurantCheckout } from '../services/paymentsApi';
 import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
 import { slugify } from '../services/adminStorage';
 import { useToast } from './components/Toast';
@@ -149,7 +150,15 @@ export default function AddRestaurantPage() {
         leadId: leadContext?.leadId || undefined,
       });
 
-      if (created.checkout?.subscriptionId) {
+      const paid = created.subscription?.paymentRequired === true;
+      if (paid) {
+        if (!created.checkout?.keyId || !created.checkout?.subscriptionId) {
+          const missing = new Error(
+            created.message || 'Razorpay Checkout details were not returned for this paid plan.',
+          );
+          missing.data = { restaurantId: created.id, paymentRequired: true };
+          throw missing;
+        }
         push(
           `Restaurant “${created.name}” created. Opening Razorpay Checkout for ${created.checkout.planName || 'subscription'}…`,
         );
@@ -161,7 +170,7 @@ export default function AddRestaurantPage() {
         } else {
           push(
             payResult.error ||
-              'Checkout was not completed. You can retry payment from the restaurant billing page.',
+              'Checkout was closed. The subscription stays pending until payment is completed.',
             'error',
           );
         }
@@ -174,6 +183,27 @@ export default function AddRestaurantPage() {
       }
       navigate(`/admin/restaurants/${created.id}`, { replace: true });
     } catch (err) {
+      const restaurantId = err.data?.restaurantId;
+      if (restaurantId && err.data?.paymentRequired) {
+        try {
+          const checkout = await startAdminRestaurantCheckout(restaurantId);
+          push('Opening Razorpay Checkout…');
+          const payResult = await openRazorpaySubscriptionCheckout(checkout);
+          if (payResult.success) {
+            push('Payment authorized. Subscription will activate after Razorpay confirmation.');
+          } else {
+            push(
+              payResult.error ||
+                'Checkout was closed. The subscription stays pending until payment is completed.',
+              'error',
+            );
+          }
+        } catch (retryErr) {
+          push(retryErr.message || err.message || 'Razorpay Checkout could not start.', 'error');
+        }
+        navigate(`/admin/restaurants/${restaurantId}`, { replace: true });
+        return;
+      }
       const detail = err.message || 'Could not create restaurant.';
       push(
         detail.toLowerCase().includes('must be') || err.code === 'VALIDATION'

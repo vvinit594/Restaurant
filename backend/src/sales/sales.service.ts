@@ -11,6 +11,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { AdminRestaurantsService } from '../admin/restaurants/admin-restaurants.service';
+import { PaymentsService } from '../payments/payments.service';
 import { CreateRestaurantDto } from '../admin/restaurants/dto/create-restaurant.dto';
 import { auditLog } from '../common/audit-log';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,6 +32,7 @@ export class SalesService {
     private readonly prisma: PrismaService,
     private readonly salesContext: SalesContextService,
     private readonly adminRestaurants: AdminRestaurantsService,
+    private readonly payments: PaymentsService,
     private readonly commissionService: CommissionService,
     private readonly qrService: QrService,
   ) {}
@@ -120,6 +122,16 @@ export class SalesService {
     });
 
     return created;
+  }
+
+  async retryRestaurantCheckout(user: { id: string; role: string }, restaurantId: string) {
+    const sp = await this.salesContext.requireSalesPerson(user);
+    const owned = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, salesPersonId: sp.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!owned) throw new NotFoundException('Restaurant not found.');
+    return this.payments.retryCheckout(restaurantId);
   }
 
   async listPlans(user: { id: string; role: string }) {

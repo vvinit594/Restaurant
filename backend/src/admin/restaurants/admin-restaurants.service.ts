@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Inject,
+  ServiceUnavailableException,
   Injectable,
   NotFoundException,
   Optional,
@@ -452,17 +453,39 @@ export class AdminRestaurantsService {
       !isTrial &&
       isPaymentRequiredForPlan(plan.code);
 
-    if (needsPayment && this.paymentsService) {
+    if (needsPayment) {
+      if (!this.paymentsService) {
+        throw new ServiceUnavailableException({
+          message:
+            'Restaurant was created, but Razorpay Checkout could not start because the payment service is unavailable.',
+          restaurantId: created.restaurant.id,
+          paymentRequired: true,
+        });
+      }
       try {
         checkout = await this.paymentsService.startPaidCheckout(
           created.subscription.id,
         );
       } catch (err) {
-        // Restaurant exists; payment can be retried from Admin/Restaurant billing UI.
+        const reason =
+          err instanceof Error ? err.message : 'Razorpay Checkout could not start.';
         auditLog('RAZORPAY_CHECKOUT_START_FAILED', {
           restaurantId: created.restaurant.id,
           subscriptionId: created.subscription.id,
-          error: err instanceof Error ? err.message : String(err),
+          error: reason,
+        });
+        throw new ServiceUnavailableException({
+          message: `Restaurant was created, but Razorpay Checkout could not start. ${reason}`,
+          restaurantId: created.restaurant.id,
+          paymentRequired: true,
+        });
+      }
+      if (!checkout?.subscriptionId || !checkout?.keyId) {
+        throw new ServiceUnavailableException({
+          message:
+            'Restaurant was created, but Razorpay did not return Checkout details.',
+          restaurantId: created.restaurant.id,
+          paymentRequired: true,
         });
       }
     }

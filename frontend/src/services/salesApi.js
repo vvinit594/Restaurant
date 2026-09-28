@@ -91,6 +91,13 @@ export async function createSalesRestaurant(payload) {
   };
 }
 
+export async function startSalesRestaurantCheckout(restaurantId) {
+  return apiRequest(`/sales/restaurants/${encodeURIComponent(restaurantId)}/checkout`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+}
+
 export async function getSalesQr() {
   return apiRequest('/sales/qr', { method: 'GET', headers: authHeaders() });
 }

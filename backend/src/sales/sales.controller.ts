@@ -56,6 +56,11 @@ export class SalesController {
     return this.salesService.createRestaurant(user, dto);
   }
 
+  @Post('restaurants/:id/checkout')
+  retryCheckout(@CurrentUser() user: SafeUser, @Param('id') id: string) {
+    return this.salesService.retryRestaurantCheckout(user, id);
+  }
+
   @Get('restaurants/:id')
   restaurant(@CurrentUser() user: SafeUser, @Param('id') id: string) {
     return this.salesService.getRestaurant(user, id);

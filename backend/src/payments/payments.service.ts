@@ -30,6 +30,40 @@ const GRACE_HOURS = 24;
 const MONTHLY_TOTAL_COUNT = 120;
 const LAUNCH_TOTAL_COUNT = 40;
 
+/** Razorpay rejects some local phone formats. Omit a contact it would refuse. */
+function razorpayContact(raw?: string | null): string | undefined {
+  let digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return undefined;
+  if (digits.startsWith('91') && digits.length === 12) digits = digits.slice(2);
+  if (digits.startsWith('0') && digits.length === 11) digits = digits.slice(1);
+  if (digits.length < 8 || digits.length > 15) return undefined;
+  return digits;
+}
+
+function razorpayFailureMessage(err: unknown): string {
+  const e = err as {
+    error?: { description?: string };
+    description?: string;
+    message?: string;
+    getResponse?: () => unknown;
+  };
+  if (typeof e?.getResponse === 'function') {
+    const body = e.getResponse();
+    if (typeof body === 'string' && body.trim()) return body.trim();
+    if (body && typeof body === 'object' && 'message' in body) {
+      const message = (body as { message?: string | string[] }).message;
+      if (Array.isArray(message)) return message.join(', ');
+      if (typeof message === 'string' && message.trim()) return message.trim();
+    }
+  }
+  return (
+    e?.error?.description ||
+    e?.description ||
+    (typeof e?.message === 'string' && e.message.trim()) ||
+    'Razorpay request failed.'
+  );
+}
+
 function unixToDate(value: unknown): Date | null {
   if (value == null || value === '') return null;
   const n = Number(value);
@@ -118,21 +152,32 @@ export class PaymentsService {
     const owner = sub.restaurant.memberships[0]?.user;
     const customerName = owner?.name || sub.restaurant.name;
     const customerEmail = owner?.email || sub.restaurant.email;
-    const customerContact = owner?.phone || sub.restaurant.phone;
+    const customerContact = razorpayContact(owner?.phone || sub.restaurant.phone);
 
     let customerId = sub.razorpayCustomerId || '';
     if (!customerId) {
-      const customer = await this.razorpay.createCustomer({
-        name: customerName,
-        email: customerEmail,
-        contact: customerContact || undefined,
-        notes: {
-          restaurantId: sub.restaurantId,
-          subscriptionId: sub.id,
-          planCode,
-        },
-      });
+      let customer;
+      try {
+        customer = await this.razorpay.createCustomer({
+          name: customerName,
+          email: customerEmail,
+          contact: customerContact,
+          notes: {
+            restaurantId: sub.restaurantId,
+            subscriptionId: sub.id,
+            planCode,
+          },
+        });
+      } catch (err) {
+        throw new ServiceUnavailableException(
+          `Razorpay customer could not be created. ${razorpayFailureMessage(err)}`,
+        );
+      }
       customerId = String(customer.id);
+      await this.prisma.subscription.update({
+        where: { id: sub.id },
+        data: { razorpayCustomerId: customerId, razorpayPlanId },
+      });
     }
 
     let rzpSubId = sub.razorpaySubscriptionId || '';
@@ -140,19 +185,34 @@ export class PaymentsService {
     if (!rzpSubId) {
       const totalCount =
         planCode === 'LAUNCH' ? LAUNCH_TOTAL_COUNT : MONTHLY_TOTAL_COUNT;
-      const created = await this.razorpay.createSubscription({
-        planId: razorpayPlanId,
-        customerId,
-        totalCount,
-        notes: {
-          restaurantId: sub.restaurantId,
-          subscriptionId: sub.id,
-          planCode,
-          dilYumPlan: planCode,
-        },
-      });
+      let created;
+      try {
+        created = await this.razorpay.createSubscription({
+          planId: razorpayPlanId,
+          customerId,
+          totalCount,
+          notes: {
+            restaurantId: sub.restaurantId,
+            subscriptionId: sub.id,
+            planCode,
+            dilYumPlan: planCode,
+          },
+        });
+      } catch (err) {
+        throw new ServiceUnavailableException(
+          `Razorpay subscription could not be created. ${razorpayFailureMessage(err)}`,
+        );
+      }
       rzpSubId = String(created.id);
       shortUrl = created.short_url || null;
+      await this.prisma.subscription.update({
+        where: { id: sub.id },
+        data: {
+          razorpayCustomerId: customerId,
+          razorpaySubscriptionId: rzpSubId,
+          razorpayPlanId,
+        },
+      });
     } else {
       try {
         const fetched = await this.razorpay.fetchSubscription(rzpSubId);
