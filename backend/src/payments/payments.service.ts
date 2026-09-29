@@ -16,6 +16,7 @@ import {
   SubscriptionStatus,
 } from '@prisma/client';
 import { auditLog } from '../common/audit-log';
+import { checkoutErrorBody } from '../common/checkout-error';
 import {
   addGraceHours,
   computeSubscriptionEndsAt,
@@ -165,8 +166,11 @@ export class PaymentsService implements OnModuleInit {
     }
 
     if (!this.razorpay.isConfigured()) {
+      this.logger.error(
+        `[Razorpay] Not configured restaurantId=${sub.restaurantId} planType=${planCode}`,
+      );
       throw new ServiceUnavailableException(
-        'Razorpay is not configured. Cannot start paid subscription checkout.',
+        checkoutErrorBody({ restaurantId: sub.restaurantId }),
       );
     }
 
@@ -180,7 +184,10 @@ export class PaymentsService implements OnModuleInit {
         `[Razorpay] Plan id missing or invalid restaurantId=${sub.restaurantId} planType=${planCode} mode=${mode}`,
       );
       throw new ServiceUnavailableException(
-        `Razorpay plan id for ${planCode} is missing or invalid. Set the ${mode} plan id and redeploy.`,
+        checkoutErrorBody({
+          planUnavailable: true,
+          restaurantId: sub.restaurantId,
+        }),
       );
     }
 
@@ -200,9 +207,10 @@ export class PaymentsService implements OnModuleInit {
         }) + ` mode=${mode}`,
       );
       throw new ServiceUnavailableException(
-        planMissingOnAccount(details)
-          ? `Razorpay could not find the ${planCode} plan on the current ${mode} account. Create that plan in the same Razorpay mode as the API key, update the plan id, and redeploy.`
-          : `Razorpay plan could not be loaded. ${details.description || 'Razorpay request failed.'}`,
+        checkoutErrorBody({
+          planUnavailable: planMissingOnAccount(details),
+          restaurantId: sub.restaurantId,
+        }),
       );
     }
     const planMismatch = planConfigurationError(planCode, remotePlan);
@@ -210,7 +218,12 @@ export class PaymentsService implements OnModuleInit {
       this.logger.error(
         `[Razorpay] Plan mismatch restaurantId=${sub.restaurantId} planType=${planCode} mode=${mode} period=${remotePlan?.period ?? 'unknown'} interval=${remotePlan?.interval ?? 'unknown'} amount=${remotePlan?.item?.amount ?? 'unknown'} currency=${remotePlan?.item?.currency ?? 'unknown'}`,
       );
-      throw new ServiceUnavailableException(planMismatch);
+      throw new ServiceUnavailableException(
+        checkoutErrorBody({
+          planUnavailable: true,
+          restaurantId: sub.restaurantId,
+        }),
+      );
     }
 
     const owner = sub.restaurant.memberships[0]?.user;
@@ -243,7 +256,7 @@ export class PaymentsService implements OnModuleInit {
           }),
         );
         throw new ServiceUnavailableException(
-          `Razorpay customer could not be created. ${details.description || 'Razorpay request failed.'}`,
+          checkoutErrorBody({ restaurantId: sub.restaurantId }),
         );
       }
       customerId = String(customer.id);
@@ -312,9 +325,10 @@ export class PaymentsService implements OnModuleInit {
           }) + ` mode=${mode}`,
         );
         throw new ServiceUnavailableException(
-          planMissingOnAccount(details)
-            ? `Razorpay could not create the ${planCode} subscription because the plan is not on the current ${mode} account. Create that plan in the same Razorpay mode as the API key, update the plan id, and redeploy.`
-            : `Razorpay subscription could not be created. ${details.description || 'Razorpay request failed.'}`,
+          checkoutErrorBody({
+            planUnavailable: planMissingOnAccount(details),
+            restaurantId: sub.restaurantId,
+          }),
         );
       }
       rzpSubId = String(created.id);

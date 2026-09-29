@@ -210,9 +210,15 @@ export default function AddRestaurantPage() {
       );
       navigate(`/admin/restaurants/${created.id}`, { replace: true });
     } catch (err) {
+      const code = err.data?.code;
       const restaurantId = err.data?.restaurantId || pendingPaymentId;
-      if (restaurantId && (err.data?.paymentRequired || pendingPaymentId)) {
-        setPendingPaymentId(restaurantId);
+      const paymentFailure =
+        code === 'RAZORPAY_PLAN_UNAVAILABLE' ||
+        code === 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED' ||
+        err.data?.paymentRequired ||
+        pendingPaymentId;
+      if (paymentFailure) {
+        if (restaurantId) setPendingPaymentId(restaurantId);
         push(paymentSetupErrorMessage(err), 'error');
         return;
       }

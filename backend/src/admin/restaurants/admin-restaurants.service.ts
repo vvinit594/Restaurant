@@ -21,6 +21,10 @@ import {
 import bcrypt from 'bcryptjs';
 import { auditLog } from '../../common/audit-log';
 import {
+  checkoutErrorBody,
+  readCheckoutErrorBody,
+} from '../../common/checkout-error';
+import {
   ACTIVE_PLAN_CODES,
   computeSubscriptionEndsAt,
   getPlanConfig,
@@ -183,6 +187,50 @@ export class AdminRestaurantsService {
     return restaurants.map((r) => this.toAdminListItem(r));
   }
 
+  /**
+   * A repeated create for a restaurant whose payment never started must reuse
+   * that restaurant instead of failing as an unhandled server error.
+   */
+  private async pendingPaidCheckoutError(restaurantId: string) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: {
+        id: restaurantId,
+        deletedAt: null,
+        status: { not: RestaurantStatus.ARCHIVED },
+      },
+      select: { id: true, status: true },
+    });
+    if (!restaurant) return null;
+    const pending = await this.prisma.subscription.findFirst({
+      where: {
+        restaurantId,
+        status: SubscriptionStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+        plan: { paymentRequired: true },
+      },
+      select: { id: true },
+    });
+    if (!pending) return null;
+    const paid = await this.prisma.subscription.findFirst({
+      where: {
+        restaurantId,
+        status: SubscriptionStatus.ACTIVE,
+        paymentStatus: PaymentStatus.PAID,
+      },
+      select: { id: true },
+    });
+    if (paid) return null;
+    if (restaurant.status === RestaurantStatus.ACTIVE) {
+      await this.prisma.restaurant.update({
+        where: { id: restaurantId },
+        data: { status: RestaurantStatus.SUSPENDED },
+      });
+    }
+    return new ServiceUnavailableException(
+      checkoutErrorBody({ restaurantId }),
+    );
+  }
+
   async create(
     dto: CreateRestaurantDto,
     adminUser: { id: string; email?: string },
@@ -260,6 +308,8 @@ export class AdminRestaurantsService {
       where: { slug },
     });
     if (existingSlug) {
+      const pendingError = await this.pendingPaidCheckoutError(existingSlug.id);
+      if (pendingError) throw pendingError;
       throw new ConflictException('A restaurant with this slug already exists.');
     }
 
@@ -324,7 +374,9 @@ export class AdminRestaurantsService {
       restaurantInput.coverImageUrl || restaurantInput.coverUrl || '';
 
     // Supabase round-trips exceed Prisma's default 5s interactive tx timeout.
-    const created = await this.prisma.$transaction(
+    let created;
+    try {
+    created = await this.prisma.$transaction(
       async (tx) => {
         const restaurant = await tx.restaurant.create({
           data: {
@@ -455,6 +507,24 @@ export class AdminRestaurantsService {
       },
       { maxWait: 10_000, timeout: 30_000 },
     );
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' ? (err as { code?: string }).code : '';
+      if (code === 'P2002') {
+        const existing = await this.prisma.restaurant.findUnique({
+          where: { slug },
+          select: { id: true },
+        });
+        if (existing) {
+          const pendingError = await this.pendingPaidCheckoutError(existing.id);
+          if (pendingError) throw pendingError;
+        }
+        throw new ConflictException(
+          'A restaurant with this slug or owner email already exists.',
+        );
+      }
+      throw err;
+    }
 
     auditLog('RESTAURANT_CREATED', {
       adminUserId: adminUser.id,
@@ -478,37 +548,31 @@ export class AdminRestaurantsService {
 
     if (needsPayment) {
       if (!this.paymentsService) {
-        throw new ServiceUnavailableException({
-          message:
-            'Restaurant was created, but Razorpay Checkout could not start because the payment service is unavailable.',
-          restaurantId: created.restaurant.id,
-          paymentRequired: true,
-        });
+        throw new ServiceUnavailableException(
+          checkoutErrorBody({ restaurantId: created.restaurant.id }),
+        );
       }
       try {
         checkout = await this.paymentsService.startPaidCheckout(
           created.subscription.id,
         );
       } catch (err) {
-        const reason = checkoutFailureReason(err);
+        if (readCheckoutErrorBody(err)) throw err;
         auditLog('RAZORPAY_CHECKOUT_START_FAILED', {
           restaurantId: created.restaurant.id,
           subscriptionId: created.subscription.id,
-          error: reason,
+          error: checkoutFailureReason(err)
+            .replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted]')
+            .slice(0, 180),
         });
-        throw new ServiceUnavailableException({
-          message: `Restaurant was saved, but payment setup could not be started. ${reason}`,
-          restaurantId: created.restaurant.id,
-          paymentRequired: true,
-        });
+        throw new ServiceUnavailableException(
+          checkoutErrorBody({ restaurantId: created.restaurant.id }),
+        );
       }
       if (!checkout?.subscriptionId || !checkout?.keyId) {
-        throw new ServiceUnavailableException({
-          message:
-            'Restaurant was created, but Razorpay did not return Checkout details.',
-          restaurantId: created.restaurant.id,
-          paymentRequired: true,
-        });
+        throw new ServiceUnavailableException(
+          checkoutErrorBody({ restaurantId: created.restaurant.id }),
+        );
       }
     }
 

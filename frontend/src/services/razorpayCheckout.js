@@ -22,9 +22,19 @@ export function loadRazorpayScript() {
  * @returns {Promise<{ success: boolean, paymentId?: string, error?: string }>}
  */
 export function paymentSetupErrorMessage(err) {
+  const code = err?.data?.code;
+  if (code === 'RAZORPAY_PLAN_UNAVAILABLE') {
+    return 'Razorpay plan configuration is unavailable. Please contact the platform administrator.';
+  }
+  if (
+    code === 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED' ||
+    err?.data?.paymentRequired
+  ) {
+    return 'Restaurant was not activated because Razorpay payment setup could not be completed.';
+  }
   const raw = String(err?.message || '').trim();
-  if (!raw || /something went wrong on the server/i.test(raw)) {
-    return 'Unable to start Razorpay payment. Please try again.';
+  if (!raw || /something went wrong on the server/i.test(raw) || /internal server error/i.test(raw)) {
+    return 'Restaurant was not activated because Razorpay payment setup could not be completed.';
   }
   return raw
     .replace(/rzp_(?:live|test)_[A-Za-z0-9]+/g, '')
