@@ -10,7 +10,10 @@ import {
   getSalesPlans,
   startSalesRestaurantCheckout,
 } from '../services/salesApi';
-import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
+import {
+  openRazorpaySubscriptionCheckout,
+  paymentSetupErrorMessage,
+} from '../services/razorpayCheckout';
 import { useToast } from '../admin/components/Toast';
 
 const INITIAL = {
@@ -41,6 +44,7 @@ export default function SalesAddRestaurantPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [pendingPaymentId, setPendingPaymentId] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
 
@@ -93,6 +97,28 @@ export default function SalesAddRestaurantPage() {
     if (!validate()) return;
     setSubmitting(true);
     try {
+      if (pendingPaymentId) {
+        const checkout = await startSalesRestaurantCheckout(pendingPaymentId);
+        if (!checkout?.keyId || !checkout?.subscriptionId) {
+          const missing = new Error('Unable to start Razorpay payment. Please try again.');
+          missing.data = { restaurantId: pendingPaymentId, paymentRequired: true };
+          throw missing;
+        }
+        push('Opening Razorpay Checkout…');
+        const payResult = await openRazorpaySubscriptionCheckout(checkout);
+        if (payResult.success) {
+          push('Payment authorized. Subscription activates after Razorpay confirmation.');
+        } else {
+          push(
+            payResult.error ||
+              'Checkout was closed. The subscription stays pending until payment is completed.',
+            'error',
+          );
+        }
+        navigate('/sales/restaurants');
+        return;
+      }
+
       const [logoUrl, coverUrl] = await Promise.all([
         resolveImageUrlForSave({ url: form.logoUrl, file: logoFile }, { kind: 'logo' }),
         resolveImageUrlForSave({ url: form.coverUrl, file: coverFile }, { kind: 'cover' }),
@@ -125,12 +151,12 @@ export default function SalesAddRestaurantPage() {
       if (paid) {
         if (!result.checkout?.keyId || !result.checkout?.subscriptionId) {
           const missing = new Error(
-            result.message || 'Razorpay Checkout details were not returned for this paid plan.',
+            'Restaurant was saved, but payment setup could not be started.',
           );
           missing.data = { restaurantId: result.id, paymentRequired: true };
           throw missing;
         }
-        push('Restaurant added. Opening Razorpay Checkout…');
+        push('Opening Razorpay Checkout…');
         const payResult = await openRazorpaySubscriptionCheckout(result.checkout);
         if (payResult.success) {
           push('Payment authorized. Subscription activates after Razorpay confirmation.');
@@ -141,30 +167,16 @@ export default function SalesAddRestaurantPage() {
             'error',
           );
         }
-      } else {
-        push(result.message || 'Restaurant added successfully.');
+        navigate('/sales/restaurants');
+        return;
       }
+      push(result.message || 'Restaurant added successfully.');
       navigate('/sales/restaurants');
     } catch (err) {
-      const restaurantId = err.data?.restaurantId;
-      if (restaurantId && err.data?.paymentRequired) {
-        try {
-          const checkout = await startSalesRestaurantCheckout(restaurantId);
-          push('Opening Razorpay Checkout…');
-          const payResult = await openRazorpaySubscriptionCheckout(checkout);
-          if (payResult.success) {
-            push('Payment authorized. Subscription activates after Razorpay confirmation.');
-          } else {
-            push(
-              payResult.error ||
-                'Checkout was closed. The subscription stays pending until payment is completed.',
-              'error',
-            );
-          }
-        } catch (retryErr) {
-          push(retryErr.message || err.message || 'Razorpay Checkout could not start.', 'error');
-        }
-        navigate('/sales/restaurants');
+      const restaurantId = err.data?.restaurantId || pendingPaymentId;
+      if (restaurantId && (err.data?.paymentRequired || pendingPaymentId)) {
+        setPendingPaymentId(restaurantId);
+        push(paymentSetupErrorMessage(err), 'error');
         return;
       }
       push(err.message || 'Could not add restaurant.', 'error');
@@ -260,11 +272,17 @@ export default function SalesAddRestaurantPage() {
         </div>
 
         <h2>Subscription</h2>
+        {pendingPaymentId ? (
+          <p className="admin-muted">
+            This restaurant is already saved. Payment has not started, so it is not active.
+            Retry Razorpay Checkout for the same restaurant.
+          </p>
+        ) : null}
         <SubscriptionPlanCards
           plans={plans}
           selectedId={form.subscriptionPlanId}
           onSelect={(id) => setField('subscriptionPlanId', id)}
-          disabled={submitting}
+          disabled={submitting || Boolean(pendingPaymentId)}
         />
 
         <div className="order-checkout-actions">
@@ -277,7 +295,11 @@ export default function SalesAddRestaurantPage() {
             Cancel
           </button>
           <button type="submit" className="admin-btn admin-btn-primary" disabled={submitting}>
-            {submitting ? 'Creating…' : 'Add Restaurant'}
+            {submitting
+              ? 'Working…'
+              : pendingPaymentId
+                ? 'Retry Razorpay Checkout'
+                : 'Add Restaurant'}
           </button>
         </div>
       </form>

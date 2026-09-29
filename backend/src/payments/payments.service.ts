@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -25,6 +26,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { parseMonthlyPriceLabel } from '../sales/sales.utils';
 import { RazorpayClientService } from './razorpay-client.service';
+import {
+  isValidRazorpayPlanId,
+  planConfigurationError,
+  planMissingOnAccount,
+  razorpayErrorDetails,
+  razorpayFailureLog,
+  razorpayKeyMode,
+} from './razorpay-diagnostics';
 
 const GRACE_HOURS = 24;
 const MONTHLY_TOTAL_COUNT = 120;
@@ -40,29 +49,6 @@ function razorpayContact(raw?: string | null): string | undefined {
   return digits;
 }
 
-function razorpayFailureMessage(err: unknown): string {
-  const e = err as {
-    error?: { description?: string };
-    description?: string;
-    message?: string;
-    getResponse?: () => unknown;
-  };
-  if (typeof e?.getResponse === 'function') {
-    const body = e.getResponse();
-    if (typeof body === 'string' && body.trim()) return body.trim();
-    if (body && typeof body === 'object' && 'message' in body) {
-      const message = (body as { message?: string | string[] }).message;
-      if (Array.isArray(message)) return message.join(', ');
-      if (typeof message === 'string' && message.trim()) return message.trim();
-    }
-  }
-  return (
-    e?.error?.description ||
-    e?.description ||
-    (typeof e?.message === 'string' && e.message.trim()) ||
-    'Razorpay request failed.'
-  );
-}
 
 function unixToDate(value: unknown): Date | null {
   if (value == null || value === '') return null;
@@ -89,7 +75,7 @@ function isRazorpaySubscriptionPaidActive(status: unknown): boolean {
 }
 
 @Injectable()
-export class PaymentsService {
+export class PaymentsService implements OnModuleInit {
   private readonly logger = new Logger(PaymentsService.name);
 
   constructor(
@@ -97,6 +83,51 @@ export class PaymentsService {
     private readonly config: ConfigService,
     private readonly razorpay: RazorpayClientService,
   ) {}
+
+  async onModuleInit() {
+    if (!this.razorpay.isConfigured()) {
+      this.logger.error(
+        '[Razorpay] Not configured. Paid checkout cannot start until RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are set.',
+      );
+      return;
+    }
+    const mode = razorpayKeyMode(this.razorpay.getKeyId());
+    this.logger.log(`[Razorpay] Client ready mode=${mode}`);
+    for (const planCode of ['MONTHLY', 'LAUNCH'] as const) {
+      const planId = getRazorpayPlanIdFromEnv(planCode, {
+        RAZORPAY_MONTHLY_PLAN_ID: this.config.get<string>('RAZORPAY_MONTHLY_PLAN_ID'),
+        RAZORPAY_LAUNCH_PLAN_ID: this.config.get<string>('RAZORPAY_LAUNCH_PLAN_ID'),
+      });
+      if (!planId || !isValidRazorpayPlanId(planId)) {
+        this.logger.error(
+          `[Razorpay] Plan id missing or invalid planType=${planCode} mode=${mode}`,
+        );
+        continue;
+      }
+      try {
+        const remote = await this.razorpay.fetchPlan(planId);
+        const mismatch = planConfigurationError(planCode, remote);
+        if (mismatch) {
+          this.logger.error(
+            `[Razorpay] Plan mismatch planType=${planCode} mode=${mode} period=${remote?.period ?? 'unknown'} interval=${remote?.interval ?? 'unknown'} amount=${remote?.item?.amount ?? 'unknown'} currency=${remote?.item?.currency ?? 'unknown'}`,
+          );
+        } else {
+          this.logger.log(
+            `[Razorpay] Plan verified planType=${planCode} mode=${mode} period=${remote?.period} interval=${remote?.interval} amount=${remote?.item?.amount} currency=${remote?.item?.currency}`,
+          );
+        }
+      } catch (err) {
+        const details = razorpayErrorDetails(err);
+        this.logger.error(
+          razorpayFailureLog({
+            operation: 'verify plan',
+            planType: planCode,
+            details,
+          }) + ` mode=${mode}`,
+        );
+      }
+    }
+  }
 
   getPublicKeyId() {
     return {
@@ -139,14 +170,47 @@ export class PaymentsService {
       );
     }
 
+    const mode = razorpayKeyMode(this.razorpay.getKeyId());
     const razorpayPlanId = getRazorpayPlanIdFromEnv(planCode, {
       RAZORPAY_MONTHLY_PLAN_ID: this.config.get<string>('RAZORPAY_MONTHLY_PLAN_ID'),
       RAZORPAY_LAUNCH_PLAN_ID: this.config.get<string>('RAZORPAY_LAUNCH_PLAN_ID'),
     });
-    if (!razorpayPlanId) {
-      throw new ServiceUnavailableException(
-        `Razorpay plan ID missing for ${planCode}. Set RAZORPAY_MONTHLY_PLAN_ID / RAZORPAY_LAUNCH_PLAN_ID.`,
+    if (!razorpayPlanId || !isValidRazorpayPlanId(razorpayPlanId)) {
+      this.logger.error(
+        `[Razorpay] Plan id missing or invalid restaurantId=${sub.restaurantId} planType=${planCode} mode=${mode}`,
       );
+      throw new ServiceUnavailableException(
+        `Razorpay plan id for ${planCode} is missing or invalid. Set the ${mode} plan id and redeploy.`,
+      );
+    }
+
+    await this.markRestaurantAwaitingPayment(sub.restaurantId);
+
+    let remotePlan;
+    try {
+      remotePlan = await this.razorpay.fetchPlan(razorpayPlanId);
+    } catch (err) {
+      const details = razorpayErrorDetails(err);
+      this.logger.error(
+        razorpayFailureLog({
+          operation: 'fetch plan',
+          restaurantId: sub.restaurantId,
+          planType: planCode,
+          details,
+        }) + ` mode=${mode}`,
+      );
+      throw new ServiceUnavailableException(
+        planMissingOnAccount(details)
+          ? `Razorpay could not find the ${planCode} plan on the current ${mode} account. Create that plan in the same Razorpay mode as the API key, update the plan id, and redeploy.`
+          : `Razorpay plan could not be loaded. ${details.description || 'Razorpay request failed.'}`,
+      );
+    }
+    const planMismatch = planConfigurationError(planCode, remotePlan);
+    if (planMismatch) {
+      this.logger.error(
+        `[Razorpay] Plan mismatch restaurantId=${sub.restaurantId} planType=${planCode} mode=${mode} period=${remotePlan?.period ?? 'unknown'} interval=${remotePlan?.interval ?? 'unknown'} amount=${remotePlan?.item?.amount ?? 'unknown'} currency=${remotePlan?.item?.currency ?? 'unknown'}`,
+      );
+      throw new ServiceUnavailableException(planMismatch);
     }
 
     const owner = sub.restaurant.memberships[0]?.user;
@@ -169,8 +233,17 @@ export class PaymentsService {
           },
         });
       } catch (err) {
+        const details = razorpayErrorDetails(err);
+        this.logger.error(
+          razorpayFailureLog({
+            operation: 'create customer',
+            restaurantId: sub.restaurantId,
+            planType: planCode,
+            details,
+          }),
+        );
         throw new ServiceUnavailableException(
-          `Razorpay customer could not be created. ${razorpayFailureMessage(err)}`,
+          `Razorpay customer could not be created. ${details.description || 'Razorpay request failed.'}`,
         );
       }
       customerId = String(customer.id);
@@ -182,6 +255,36 @@ export class PaymentsService {
 
     let rzpSubId = sub.razorpaySubscriptionId || '';
     let shortUrl: string | null = null;
+    if (rzpSubId) {
+      try {
+        const fetched = await this.razorpay.fetchSubscription(rzpSubId);
+        shortUrl = fetched.short_url || null;
+        if (isRazorpaySubscriptionPaidActive(fetched?.status)) {
+          await this.activateLocalSubscription(sub, fetched);
+          throw new BadRequestException(
+            'Subscription is already active. Refresh the restaurant profile.',
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        const details = razorpayErrorDetails(err);
+        this.logger.error(
+          razorpayFailureLog({
+            operation: 'fetch subscription',
+            restaurantId: sub.restaurantId,
+            planType: planCode,
+            details,
+          }),
+        );
+        if (planMissingOnAccount(details)) {
+          rzpSubId = '';
+          await this.prisma.subscription.update({
+            where: { id: sub.id },
+            data: { razorpaySubscriptionId: null },
+          });
+        }
+      }
+    }
     if (!rzpSubId) {
       const totalCount =
         planCode === 'LAUNCH' ? LAUNCH_TOTAL_COUNT : MONTHLY_TOTAL_COUNT;
@@ -199,8 +302,19 @@ export class PaymentsService {
           },
         });
       } catch (err) {
+        const details = razorpayErrorDetails(err);
+        this.logger.error(
+          razorpayFailureLog({
+            operation: 'create subscription',
+            restaurantId: sub.restaurantId,
+            planType: planCode,
+            details,
+          }) + ` mode=${mode}`,
+        );
         throw new ServiceUnavailableException(
-          `Razorpay subscription could not be created. ${razorpayFailureMessage(err)}`,
+          planMissingOnAccount(details)
+            ? `Razorpay could not create the ${planCode} subscription because the plan is not on the current ${mode} account. Create that plan in the same Razorpay mode as the API key, update the plan id, and redeploy.`
+            : `Razorpay subscription could not be created. ${details.description || 'Razorpay request failed.'}`,
         );
       }
       rzpSubId = String(created.id);
@@ -213,20 +327,6 @@ export class PaymentsService {
           razorpayPlanId,
         },
       });
-    } else {
-      try {
-        const fetched = await this.razorpay.fetchSubscription(rzpSubId);
-        shortUrl = fetched.short_url || null;
-        if (isRazorpaySubscriptionPaidActive(fetched?.status)) {
-          await this.activateLocalSubscription(sub, fetched);
-          throw new BadRequestException(
-            'Subscription is already active. Refresh the restaurant profile.',
-          );
-        }
-      } catch (err) {
-        if (err instanceof BadRequestException) throw err;
-        /* ignore fetch failures and continue checkout */
-      }
     }
 
     const planConfig = getPlanConfig(planCode);
@@ -263,6 +363,30 @@ export class PaymentsService {
       billingMonths: planConfig?.billingMonths || sub.plan.billingMonths,
       paymentRequired: true,
     };
+  }
+
+  /**
+   * A paid restaurant is not publicly usable until Razorpay confirms payment.
+   * Existing paid subscriptions are left alone. Webhook activation restores ACTIVE.
+   */
+  private async markRestaurantAwaitingPayment(restaurantId: string) {
+    const paid = await this.prisma.subscription.findFirst({
+      where: {
+        restaurantId,
+        status: SubscriptionStatus.ACTIVE,
+        paymentStatus: PaymentStatus.PAID,
+      },
+      select: { id: true },
+    });
+    if (paid) return;
+    await this.prisma.restaurant.updateMany({
+      where: {
+        id: restaurantId,
+        status: RestaurantStatus.ACTIVE,
+        deletedAt: null,
+      },
+      data: { status: RestaurantStatus.SUSPENDED },
+    });
   }
 
   async getRestaurantBilling(restaurantId: string) {

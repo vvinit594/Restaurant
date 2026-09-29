@@ -93,6 +93,11 @@ export class RazorpayClientService {
     });
   }
 
+  async fetchPlan(planId: string) {
+    const rzp = this.getInstance();
+    return rzp.plans.fetch(planId);
+  }
+
   async fetchSubscription(subscriptionId: string) {
     const rzp = this.getInstance();
     return rzp.subscriptions.fetch(subscriptionId);

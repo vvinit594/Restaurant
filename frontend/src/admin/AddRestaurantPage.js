@@ -6,7 +6,10 @@ import { resolveImageUrlForSave } from '../services/mediaApi';
 import { validatePasswordStrength } from '../services/passwordHash';
 import { createRestaurant, getSubscriptionPlans } from '../services/restaurantsApi';
 import { startAdminRestaurantCheckout } from '../services/paymentsApi';
-import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
+import {
+  openRazorpaySubscriptionCheckout,
+  paymentSetupErrorMessage,
+} from '../services/razorpayCheckout';
 import { slugify } from '../services/adminStorage';
 import { useToast } from './components/Toast';
 
@@ -40,6 +43,7 @@ export default function AddRestaurantPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [pendingPaymentId, setPendingPaymentId] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [leadContext] = useState(leadPrefill);
@@ -116,6 +120,28 @@ export default function AddRestaurantPage() {
     if (!validate()) return;
     setSubmitting(true);
     try {
+      if (pendingPaymentId) {
+        const checkout = await startAdminRestaurantCheckout(pendingPaymentId);
+        if (!checkout?.keyId || !checkout?.subscriptionId) {
+          const missing = new Error('Unable to start Razorpay payment. Please try again.');
+          missing.data = { restaurantId: pendingPaymentId, paymentRequired: true };
+          throw missing;
+        }
+        push('Opening Razorpay Checkout…');
+        const payResult = await openRazorpaySubscriptionCheckout(checkout);
+        if (payResult.success) {
+          push('Payment authorized. Subscription will activate after Razorpay confirmation.');
+        } else {
+          push(
+            payResult.error ||
+              'Checkout was closed. The subscription stays pending until payment is completed.',
+            'error',
+          );
+        }
+        navigate(`/admin/restaurants/${pendingPaymentId}`, { replace: true });
+        return;
+      }
+
       const [logoUrl, coverUrl] = await Promise.all([
         resolveImageUrlForSave({ url: form.logoUrl, file: logoFile }, { kind: 'logo' }),
         resolveImageUrlForSave({ url: form.coverUrl, file: coverFile }, { kind: 'cover' }),
@@ -154,13 +180,13 @@ export default function AddRestaurantPage() {
       if (paid) {
         if (!created.checkout?.keyId || !created.checkout?.subscriptionId) {
           const missing = new Error(
-            created.message || 'Razorpay Checkout details were not returned for this paid plan.',
+            'Restaurant was saved, but payment setup could not be started.',
           );
           missing.data = { restaurantId: created.id, paymentRequired: true };
           throw missing;
         }
         push(
-          `Restaurant “${created.name}” created. Opening Razorpay Checkout for ${created.checkout.planName || 'subscription'}…`,
+          `Opening Razorpay Checkout for ${created.checkout.planName || 'the selected plan'}…`,
         );
         const payResult = await openRazorpaySubscriptionCheckout(created.checkout);
         if (payResult.success) {
@@ -174,34 +200,20 @@ export default function AddRestaurantPage() {
             'error',
           );
         }
-      } else {
-        push(
-          leadContext
-            ? `Restaurant “${created.name}” created from lead and linked to ${leadContext.salesCode}.`
-            : created.message || `Restaurant “${created.name}” created successfully.`,
-        );
+        navigate(`/admin/restaurants/${created.id}`, { replace: true });
+        return;
       }
+      push(
+        leadContext
+          ? `Restaurant “${created.name}” created from lead and linked to ${leadContext.salesCode}.`
+          : created.message || `Restaurant “${created.name}” created successfully.`,
+      );
       navigate(`/admin/restaurants/${created.id}`, { replace: true });
     } catch (err) {
-      const restaurantId = err.data?.restaurantId;
-      if (restaurantId && err.data?.paymentRequired) {
-        try {
-          const checkout = await startAdminRestaurantCheckout(restaurantId);
-          push('Opening Razorpay Checkout…');
-          const payResult = await openRazorpaySubscriptionCheckout(checkout);
-          if (payResult.success) {
-            push('Payment authorized. Subscription will activate after Razorpay confirmation.');
-          } else {
-            push(
-              payResult.error ||
-                'Checkout was closed. The subscription stays pending until payment is completed.',
-              'error',
-            );
-          }
-        } catch (retryErr) {
-          push(retryErr.message || err.message || 'Razorpay Checkout could not start.', 'error');
-        }
-        navigate(`/admin/restaurants/${restaurantId}`, { replace: true });
+      const restaurantId = err.data?.restaurantId || pendingPaymentId;
+      if (restaurantId && (err.data?.paymentRequired || pendingPaymentId)) {
+        setPendingPaymentId(restaurantId);
+        push(paymentSetupErrorMessage(err), 'error');
         return;
       }
       const detail = err.message || 'Could not create restaurant.';
@@ -335,11 +347,17 @@ export default function AddRestaurantPage() {
 
         <section className="admin-form-section">
           <h2>Subscription</h2>
+          {pendingPaymentId ? (
+            <p className="admin-muted admin-mt">
+              This restaurant is already saved. Payment has not started, so it is not active.
+              Retry Razorpay Checkout for the same restaurant. Submitting again would create a duplicate.
+            </p>
+          ) : null}
           <SubscriptionPlanCards
             plans={plans}
             selectedId={form.subscriptionPlanId}
             onSelect={(id) => setField('subscriptionPlanId', id)}
-            disabled={submitting}
+            disabled={submitting || Boolean(pendingPaymentId)}
           />
           {selectedPlan ? (
             <p className="admin-muted admin-mt">
@@ -354,7 +372,11 @@ export default function AddRestaurantPage() {
             Cancel
           </Link>
           <button type="submit" className="admin-btn admin-btn-primary" disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create Restaurant'}
+            {submitting
+              ? 'Working…'
+              : pendingPaymentId
+                ? 'Retry Razorpay Checkout'
+                : 'Create Restaurant'}
           </button>
         </div>
       </form>

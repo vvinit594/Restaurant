@@ -21,6 +21,18 @@ export function loadRazorpayScript() {
  * @param {object} checkout — from create restaurant / billing API
  * @returns {Promise<{ success: boolean, paymentId?: string, error?: string }>}
  */
+export function paymentSetupErrorMessage(err) {
+  const raw = String(err?.message || '').trim();
+  if (!raw || /something went wrong on the server/i.test(raw)) {
+    return 'Unable to start Razorpay payment. Please try again.';
+  }
+  return raw
+    .replace(/rzp_(?:live|test)_[A-Za-z0-9]+/g, '')
+    .replace(/Basic\s+[A-Za-z0-9+/=]+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function openRazorpaySubscriptionCheckout(checkout) {
   if (!checkout?.keyId || !checkout?.subscriptionId) {
     throw new Error('Missing Razorpay checkout details from server.');

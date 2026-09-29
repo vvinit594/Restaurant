@@ -33,6 +33,26 @@ import { QrService } from '../../qr/qr.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 
+function checkoutFailureReason(err: unknown): string {
+  if (err && typeof err === 'object' && 'getResponse' in err) {
+    const getResponse = (err as { getResponse?: () => unknown }).getResponse;
+    if (typeof getResponse === 'function') {
+      const body = getResponse();
+      if (typeof body === 'string' && body.trim()) return body.trim();
+      if (body && typeof body === 'object' && 'message' in body) {
+        const message = (body as { message?: unknown }).message;
+        if (typeof message === 'string' && message.trim() && message !== 'Service Unavailable') {
+          return message.trim();
+        }
+      }
+    }
+  }
+  if (err instanceof Error && err.message.trim() && err.message !== 'Service Unavailable') {
+    return err.message.trim();
+  }
+  return 'Razorpay Checkout could not start.';
+}
+
 function isoOrNull(value?: Date | null): string | null {
   if (!value) return null;
   try {
@@ -319,7 +339,10 @@ export class AdminRestaurantsService {
             city: restaurantInput.city.trim(),
             state: restaurantInput.state?.trim() || null,
             pincode: restaurantInput.pincode?.trim() || null,
-            status: RestaurantStatus.ACTIVE,
+            status:
+              isTrial || !paymentRequired
+                ? RestaurantStatus.ACTIVE
+                : RestaurantStatus.SUSPENDED,
             createdByUserId: adminUser.id,
             salesPersonId: salesPersonId || null,
           },
@@ -467,15 +490,14 @@ export class AdminRestaurantsService {
           created.subscription.id,
         );
       } catch (err) {
-        const reason =
-          err instanceof Error ? err.message : 'Razorpay Checkout could not start.';
+        const reason = checkoutFailureReason(err);
         auditLog('RAZORPAY_CHECKOUT_START_FAILED', {
           restaurantId: created.restaurant.id,
           subscriptionId: created.subscription.id,
           error: reason,
         });
         throw new ServiceUnavailableException({
-          message: `Restaurant was created, but Razorpay Checkout could not start. ${reason}`,
+          message: `Restaurant was saved, but payment setup could not be started. ${reason}`,
           restaurantId: created.restaurant.id,
           paymentRequired: true,
         });
