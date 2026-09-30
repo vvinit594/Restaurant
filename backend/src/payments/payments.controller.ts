@@ -78,6 +78,16 @@ export class PaymentsController {
     return this.payments.processWebhookEvent(event);
   }
 
+  /**
+   * Safe Live/Test plan check. Amounts and cycles only — no keys, secrets, or plan ids.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(AppRole.SUPER_ADMIN)
+  @Get('admin/razorpay/status')
+  razorpayStatus() {
+    return this.payments.getLiveConfigurationReport();
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(AppRole.SUPER_ADMIN)
   @Get('admin/restaurants/:restaurantId/billing')

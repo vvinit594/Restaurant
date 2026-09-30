@@ -57,7 +57,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       (details.status != null || details.code || planMissingOnAccount(details))
     ) {
       res.status(HttpStatus.SERVICE_UNAVAILABLE).json(
-        checkoutErrorBody({ planUnavailable: planMissingOnAccount(details) }),
+        checkoutErrorBody({
+          planUnavailable: planMissingOnAccount(details),
+          reason: details.description,
+        }),
       );
       return;
     }

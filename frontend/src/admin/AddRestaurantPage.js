@@ -123,8 +123,16 @@ export default function AddRestaurantPage() {
       if (pendingPaymentId) {
         const checkout = await startAdminRestaurantCheckout(pendingPaymentId);
         if (!checkout?.keyId || !checkout?.subscriptionId) {
-          const missing = new Error('Unable to start Razorpay payment. Please try again.');
-          missing.data = { restaurantId: pendingPaymentId, paymentRequired: true };
+          const missing = new Error(
+            'Razorpay payment setup failed. Razorpay did not return a subscription id. Please retry Razorpay Checkout.',
+          );
+          missing.data = {
+            restaurantId: pendingPaymentId,
+            paymentRequired: true,
+            code: 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED',
+            reason: 'Razorpay did not return a subscription id.',
+            message: missing.message,
+          };
           throw missing;
         }
         push('Opening Razorpay Checkout…');
@@ -180,9 +188,15 @@ export default function AddRestaurantPage() {
       if (paid) {
         if (!created.checkout?.keyId || !created.checkout?.subscriptionId) {
           const missing = new Error(
-            'Restaurant was saved, but payment setup could not be started.',
+            'Razorpay payment setup failed. Razorpay did not return a subscription id. Please retry Razorpay Checkout.',
           );
-          missing.data = { restaurantId: created.id, paymentRequired: true };
+          missing.data = {
+            restaurantId: created.id,
+            paymentRequired: true,
+            code: 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED',
+            reason: 'Razorpay did not return a subscription id.',
+            message: missing.message,
+          };
           throw missing;
         }
         push(

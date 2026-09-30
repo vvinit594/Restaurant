@@ -13,7 +13,10 @@ import {
   getAdminRestaurantBilling,
   startAdminRestaurantCheckout,
 } from '../services/paymentsApi';
-import { openRazorpaySubscriptionCheckout } from '../services/razorpayCheckout';
+import {
+  openRazorpaySubscriptionCheckout,
+  paymentSetupErrorMessage,
+} from '../services/razorpayCheckout';
 import {
   checkoutCtaLabel,
   isAwaitingWebhookConfirmation,
@@ -483,7 +486,7 @@ export default function RestaurantDetailPage() {
                               push(err.message, 'error');
                             }
                           } else {
-                            push(err.message || 'Could not start checkout.', 'error');
+                            push(paymentSetupErrorMessage(err), 'error');
                           }
                         } finally {
                           setPayBusy(false);

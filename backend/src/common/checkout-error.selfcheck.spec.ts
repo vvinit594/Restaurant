@@ -16,11 +16,24 @@ describe('checkout error responses', () => {
     expect(body.success).toBe(false);
     expect(body.code).toBe(CHECKOUT_PLAN_UNAVAILABLE);
     expect(body.message).toBe(
-      'Razorpay payment plan is not available for the current account.',
+      'Razorpay payment setup failed. Razorpay payment plan is not available for the current account. Please retry Razorpay Checkout.',
     );
     expect(body.paymentRequired).toBe(true);
     expect(body.restaurantId).toBe('rest_1');
     expect(JSON.stringify(body)).not.toMatch(/rzp_|secret|authorization/i);
+  });
+
+  it('includes a sanitized Razorpay reason and drops key material', () => {
+    const body = checkoutErrorBody({
+      restaurantId: 'rest_1',
+      reason: 'Authentication failed for rzp_live_abcdefghijklmnop',
+    });
+    expect(body.code).toBe('RAZORPAY_CHECKOUT_INITIALIZATION_FAILED');
+    expect(body.reason).toBe('Authentication failed for');
+    expect(body.message).toContain('Razorpay payment setup failed.');
+    expect(body.message).toContain('Please retry Razorpay Checkout.');
+    expect(body.message).not.toContain('rzp_live_');
+    expect(JSON.stringify(body)).not.toContain('abcdefghijklmnop');
   });
 
   it('reads a ServiceUnavailableException without detaching getResponse', () => {

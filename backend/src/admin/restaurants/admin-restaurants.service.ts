@@ -231,7 +231,10 @@ export class AdminRestaurantsService {
       });
     }
     return new ServiceUnavailableException(
-      checkoutErrorBody({ restaurantId }),
+      checkoutErrorBody({
+        restaurantId,
+        reason: 'This restaurant is already saved and payment has not started.',
+      }),
     );
   }
 
@@ -553,7 +556,10 @@ export class AdminRestaurantsService {
     if (needsPayment) {
       if (!this.paymentsService) {
         throw new ServiceUnavailableException(
-          checkoutErrorBody({ restaurantId: created.restaurant.id }),
+          checkoutErrorBody({
+            restaurantId: created.restaurant.id,
+            reason: 'Razorpay credentials are not configured.',
+          }),
         );
       }
       try {
@@ -570,12 +576,18 @@ export class AdminRestaurantsService {
             .slice(0, 180),
         });
         throw new ServiceUnavailableException(
-          checkoutErrorBody({ restaurantId: created.restaurant.id }),
+          checkoutErrorBody({
+            restaurantId: created.restaurant.id,
+            reason: checkoutFailureReason(err),
+          }),
         );
       }
       if (!checkout?.subscriptionId || !checkout?.keyId) {
         throw new ServiceUnavailableException(
-          checkoutErrorBody({ restaurantId: created.restaurant.id }),
+          checkoutErrorBody({
+            restaurantId: created.restaurant.id,
+            reason: 'Razorpay did not return a subscription id.',
+          }),
         );
       }
     }

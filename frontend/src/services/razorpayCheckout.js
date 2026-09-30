@@ -21,26 +21,39 @@ export function loadRazorpayScript() {
  * @param {object} checkout — from create restaurant / billing API
  * @returns {Promise<{ success: boolean, paymentId?: string, error?: string }>}
  */
-export function paymentSetupErrorMessage(err) {
-  const code = err?.data?.code;
-  if (code === 'RAZORPAY_PLAN_UNAVAILABLE') {
-    return 'Razorpay plan configuration is unavailable. Please contact the platform administrator.';
-  }
-  if (
-    code === 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED' ||
-    err?.data?.paymentRequired
-  ) {
-    return 'Restaurant was not activated because Razorpay payment setup could not be completed.';
-  }
-  const raw = String(err?.message || '').trim();
-  if (!raw || /something went wrong on the server/i.test(raw) || /internal server error/i.test(raw)) {
-    return 'Restaurant was not activated because Razorpay payment setup could not be completed.';
-  }
-  return raw
+function sanitizePaymentText(value) {
+  return String(value || '')
     .replace(/rzp_(?:live|test)_[A-Za-z0-9]+/g, '')
+    .replace(/\bplan_[A-Za-z0-9]{14}\b/g, '')
+    .replace(/\b(?:key_secret|webhook_secret)\b\s*[:=]?\s*\S+/gi, '')
     .replace(/Basic\s+[A-Za-z0-9+/=]+/gi, '')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function setupFailureMessage(detail) {
+  const clean = sanitizePaymentText(detail);
+  if (!clean) return 'Razorpay payment setup failed. Please retry Razorpay Checkout.';
+  if (/^Razorpay payment setup failed\./i.test(clean)) return clean;
+  const sentence = /[.!?]$/.test(clean) ? clean : `${clean}.`;
+  return `Razorpay payment setup failed. ${sentence} Please retry Razorpay Checkout.`;
+}
+
+export function paymentSetupErrorMessage(err) {
+  const code = err?.data?.code;
+  const paymentFailure =
+    code === 'RAZORPAY_PLAN_UNAVAILABLE' ||
+    code === 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED' ||
+    Boolean(err?.data?.paymentRequired);
+  if (paymentFailure) {
+    return setupFailureMessage(err?.data?.reason || err?.data?.message || err?.message);
+  }
+  const raw = sanitizePaymentText(err?.message);
+  if (!raw || /something went wrong on the server/i.test(raw) || /internal server error/i.test(raw)) {
+    return 'Razorpay payment setup failed. Please retry Razorpay Checkout.';
+  }
+  return raw;
 }
 
 export async function openRazorpaySubscriptionCheckout(checkout) {

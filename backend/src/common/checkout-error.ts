@@ -1,3 +1,5 @@
+import { clientSafeRazorpayReason } from '../payments/razorpay-diagnostics';
+
 export const CHECKOUT_INIT_FAILED = 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED';
 export const CHECKOUT_PLAN_UNAVAILABLE = 'RAZORPAY_PLAN_UNAVAILABLE';
 
@@ -7,20 +9,35 @@ export type CheckoutErrorBody = {
   message: string;
   paymentRequired: true;
   restaurantId?: string;
+  reason?: string;
 };
 
 export function checkoutErrorBody(input?: {
   planUnavailable?: boolean;
   restaurantId?: string | null;
+  reason?: string | null;
 }): CheckoutErrorBody {
   const restaurantId = String(input?.restaurantId || '').trim();
+  const reason = clientSafeRazorpayReason(input?.reason);
+  const detail =
+    reason ||
+    (input?.planUnavailable
+      ? 'Razorpay payment plan is not available for the current account.'
+      : '');
+  const sentence = detail ? (detail.endsWith('.') ? detail : `${detail}.`) : '';
+  const message = [
+    'Razorpay payment setup failed.',
+    sentence,
+    'Please retry Razorpay Checkout.',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return {
     success: false,
     code: input?.planUnavailable ? CHECKOUT_PLAN_UNAVAILABLE : CHECKOUT_INIT_FAILED,
-    message: input?.planUnavailable
-      ? 'Razorpay payment plan is not available for the current account.'
-      : 'Unable to initialize Razorpay payment. Please try again.',
+    message,
     paymentRequired: true,
+    ...(reason ? { reason } : {}),
     ...(restaurantId ? { restaurantId } : {}),
   };
 }

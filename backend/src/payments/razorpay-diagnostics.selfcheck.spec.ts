@@ -24,6 +24,24 @@ describe('Razorpay diagnostics', () => {
     expect(details.description).toBe('The id provided does not exist');
     expect(details.field).toBe('plan_id');
     expect(planMissingOnAccount(details)).toBe(true);
+    expect(
+      planMissingOnAccount({
+        status: null,
+        code: null,
+        description: 'The id provided does not exist',
+        field: null,
+        reason: null,
+      }),
+    ).toBe(true);
+    expect(
+      planMissingOnAccount({
+        status: 401,
+        code: 'BAD_REQUEST_ERROR',
+        description: 'Authentication failed',
+        field: null,
+        reason: null,
+      }),
+    ).toBe(false);
   });
 
   it('redacts key material from a description', () => {
@@ -73,7 +91,7 @@ describe('Razorpay diagnostics', () => {
 
   it('logs operation context without a plan id or secret', () => {
     const line = razorpayFailureLog({
-      operation: 'create subscription',
+      operation: 'create_subscription',
       restaurantId: 'rest_1',
       planType: 'MONTHLY',
       details: razorpayErrorDetails({
@@ -84,10 +102,11 @@ describe('Razorpay diagnostics', () => {
         },
       }),
     });
-    expect(line).toContain('restaurantId=rest_1');
-    expect(line).toContain('planType=MONTHLY');
-    expect(line).toContain('status=400');
-    expect(line).toContain('code=BAD_REQUEST_ERROR');
+    expect(line).toContain('operation: create_subscription');
+    expect(line).toContain('restaurantId: rest_1');
+    expect(line).toContain('planType: MONTHLY');
+    expect(line).toContain('httpStatus: 400');
+    expect(line).toContain('razorpayCode: BAD_REQUEST_ERROR');
     expect(line).not.toContain('plan_');
     expect(line).not.toContain('rzp_');
   });

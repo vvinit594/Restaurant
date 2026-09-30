@@ -34,6 +34,7 @@ import {
   razorpayErrorDetails,
   razorpayFailureLog,
   razorpayKeyMode,
+  type RazorpayErrorDetails,
 } from './razorpay-diagnostics';
 
 const GRACE_HOURS = 24;
@@ -121,7 +122,7 @@ export class PaymentsService implements OnModuleInit {
         const details = razorpayErrorDetails(err);
         this.logger.error(
           razorpayFailureLog({
-            operation: 'verify plan',
+            operation: 'fetch_plan',
             planType: planCode,
             details,
           }) + ` mode=${mode}`,
@@ -135,6 +136,107 @@ export class PaymentsService implements OnModuleInit {
       keyId: this.razorpay.getKeyId(),
       configured: this.razorpay.isConfigured(),
     };
+  }
+
+  /**
+   * Read-only check that the configured plans belong to the current key.
+   * Returns amounts and cycles only. Never returns keys, secrets, or plan ids.
+   */
+  async getLiveConfigurationReport() {
+    const mode = razorpayKeyMode(this.razorpay.getKeyId());
+    const [monthly, launch] = await Promise.all([
+      this.inspectConfiguredPlan('MONTHLY'),
+      this.inspectConfiguredPlan('LAUNCH'),
+    ]);
+    return {
+      configured: this.razorpay.isConfigured(),
+      mode: mode === 'live' ? 'LIVE' : mode === 'test' ? 'TEST' : 'UNKNOWN',
+      webhookSecretConfigured: Boolean(this.razorpay.getWebhookSecret()),
+      monthly,
+      launch,
+    };
+  }
+
+  private async inspectConfiguredPlan(planCode: 'MONTHLY' | 'LAUNCH') {
+    const planId = getRazorpayPlanIdFromEnv(planCode, {
+      RAZORPAY_MONTHLY_PLAN_ID: this.config.get<string>('RAZORPAY_MONTHLY_PLAN_ID'),
+      RAZORPAY_LAUNCH_PLAN_ID: this.config.get<string>('RAZORPAY_LAUNCH_PLAN_ID'),
+    });
+    const empty = {
+      configured: false,
+      valid: false,
+      amount: null as number | null,
+      period: null as string | null,
+      interval: null as number | null,
+      httpStatus: null as number | null,
+      razorpayCode: null as string | null,
+      description: null as string | null,
+    };
+    if (!planId || !isValidRazorpayPlanId(planId)) {
+      return {
+        ...empty,
+        configured: Boolean(planId),
+        description: planId
+          ? 'The configured plan id format is invalid.'
+          : 'Plan id is not configured.',
+      };
+    }
+    if (!this.razorpay.isConfigured()) {
+      return {
+        ...empty,
+        configured: true,
+        description: 'Razorpay credentials are not configured.',
+      };
+    }
+    try {
+      const remote = await this.razorpay.fetchPlan(planId);
+      const mismatch = planConfigurationError(planCode, remote);
+      const amount = Number(remote?.item?.amount);
+      const interval = Number(remote?.interval);
+      return {
+        configured: true,
+        valid: !mismatch,
+        amount: Number.isFinite(amount) ? amount : null,
+        period: remote?.period ? String(remote.period) : null,
+        interval: Number.isFinite(interval) ? interval : null,
+        httpStatus: null,
+        razorpayCode: null,
+        description: mismatch,
+      };
+    } catch (err) {
+      const details = razorpayErrorDetails(err);
+      this.logger.error(
+        razorpayFailureLog({
+          operation: 'fetch_plan',
+          planType: planCode,
+          details,
+        }),
+      );
+      return {
+        ...empty,
+        configured: true,
+        httpStatus: details.status,
+        razorpayCode: details.code,
+        description: details.description,
+      };
+    }
+  }
+
+  private refusePaidCheckout(input: {
+    restaurantId: string;
+    planUnavailable?: boolean;
+    reason?: string | null;
+    details?: RazorpayErrorDetails;
+  }) {
+    return new ServiceUnavailableException(
+      checkoutErrorBody({
+        restaurantId: input.restaurantId,
+        planUnavailable:
+          input.planUnavailable ||
+          (input.details ? planMissingOnAccount(input.details) : false),
+        reason: input.reason || input.details?.description,
+      }),
+    );
   }
 
   /**
@@ -169,9 +271,10 @@ export class PaymentsService implements OnModuleInit {
       this.logger.error(
         `[Razorpay] Not configured restaurantId=${sub.restaurantId} planType=${planCode}`,
       );
-      throw new ServiceUnavailableException(
-        checkoutErrorBody({ restaurantId: sub.restaurantId }),
-      );
+      throw this.refusePaidCheckout({
+        restaurantId: sub.restaurantId,
+        reason: 'Razorpay credentials are not configured.',
+      });
     }
 
     const mode = razorpayKeyMode(this.razorpay.getKeyId());
@@ -183,12 +286,11 @@ export class PaymentsService implements OnModuleInit {
       this.logger.error(
         `[Razorpay] Plan id missing or invalid restaurantId=${sub.restaurantId} planType=${planCode} mode=${mode}`,
       );
-      throw new ServiceUnavailableException(
-        checkoutErrorBody({
-          planUnavailable: true,
-          restaurantId: sub.restaurantId,
-        }),
-      );
+      throw this.refusePaidCheckout({
+        restaurantId: sub.restaurantId,
+        planUnavailable: true,
+        reason: 'The configured Razorpay plan id is missing or invalid.',
+      });
     }
 
     await this.markRestaurantAwaitingPayment(sub.restaurantId);
@@ -200,30 +302,27 @@ export class PaymentsService implements OnModuleInit {
       const details = razorpayErrorDetails(err);
       this.logger.error(
         razorpayFailureLog({
-          operation: 'fetch plan',
+          operation: 'fetch_plan',
           restaurantId: sub.restaurantId,
           planType: planCode,
           details,
         }) + ` mode=${mode}`,
       );
-      throw new ServiceUnavailableException(
-        checkoutErrorBody({
-          planUnavailable: planMissingOnAccount(details),
-          restaurantId: sub.restaurantId,
-        }),
-      );
+      throw this.refusePaidCheckout({
+        restaurantId: sub.restaurantId,
+        details,
+      });
     }
     const planMismatch = planConfigurationError(planCode, remotePlan);
     if (planMismatch) {
       this.logger.error(
         `[Razorpay] Plan mismatch restaurantId=${sub.restaurantId} planType=${planCode} mode=${mode} period=${remotePlan?.period ?? 'unknown'} interval=${remotePlan?.interval ?? 'unknown'} amount=${remotePlan?.item?.amount ?? 'unknown'} currency=${remotePlan?.item?.currency ?? 'unknown'}`,
       );
-      throw new ServiceUnavailableException(
-        checkoutErrorBody({
-          planUnavailable: true,
-          restaurantId: sub.restaurantId,
-        }),
-      );
+      throw this.refusePaidCheckout({
+        restaurantId: sub.restaurantId,
+        planUnavailable: true,
+        reason: planMismatch,
+      });
     }
 
     const owner = sub.restaurant.memberships[0]?.user;
@@ -249,15 +348,16 @@ export class PaymentsService implements OnModuleInit {
         const details = razorpayErrorDetails(err);
         this.logger.error(
           razorpayFailureLog({
-            operation: 'create customer',
+            operation: 'create_customer',
             restaurantId: sub.restaurantId,
             planType: planCode,
             details,
           }),
         );
-        throw new ServiceUnavailableException(
-          checkoutErrorBody({ restaurantId: sub.restaurantId }),
-        );
+        throw this.refusePaidCheckout({
+          restaurantId: sub.restaurantId,
+          details,
+        });
       }
       customerId = String(customer.id);
       await this.prisma.subscription.update({
@@ -283,7 +383,7 @@ export class PaymentsService implements OnModuleInit {
         const details = razorpayErrorDetails(err);
         this.logger.error(
           razorpayFailureLog({
-            operation: 'fetch subscription',
+            operation: 'fetch_subscription',
             restaurantId: sub.restaurantId,
             planType: planCode,
             details,
@@ -318,18 +418,16 @@ export class PaymentsService implements OnModuleInit {
         const details = razorpayErrorDetails(err);
         this.logger.error(
           razorpayFailureLog({
-            operation: 'create subscription',
+            operation: 'create_subscription',
             restaurantId: sub.restaurantId,
             planType: planCode,
             details,
           }) + ` mode=${mode}`,
         );
-        throw new ServiceUnavailableException(
-          checkoutErrorBody({
-            planUnavailable: planMissingOnAccount(details),
-            restaurantId: sub.restaurantId,
-          }),
-        );
+        throw this.refusePaidCheckout({
+          restaurantId: sub.restaurantId,
+          details,
+        });
       }
       rzpSubId = String(created.id);
       shortUrl = created.short_url || null;

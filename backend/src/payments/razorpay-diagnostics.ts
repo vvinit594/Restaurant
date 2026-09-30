@@ -18,8 +18,20 @@ export type RazorpayPlanSnapshot = {
 export function publicRazorpayText(value: string): string {
   return value
     .replace(/rzp_(?:live|test)_[A-Za-z0-9]+/g, '[redacted-key]')
-    .replace(/\b(?:key_secret|webhook_secret)\b\s*[:=]?\s*\S+/gi, '[redacted]')
+    .replace(/\bplan_[A-Za-z0-9]{14}\b/g, '[redacted-plan]')
+    .replace(/\b(?:key_secret|webhook_secret|cron_secret)\b\s*[:=]?\s*\S+/gi, '[redacted]')
     .replace(/Basic\s+[A-Za-z0-9+/=]+/gi, '[redacted]')
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted]')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+/** Short reason safe to show to an admin. Credentials are removed, not labeled. */
+export function clientSafeRazorpayReason(value?: string | null): string {
+  return publicRazorpayText(String(value || ''))
+    .replace(/\[redacted(?:-key|-plan|-email)?\]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 240);
@@ -100,25 +112,27 @@ export function razorpayFailureLog(input: {
   planType?: string | null;
   details: RazorpayErrorDetails;
 }): string {
+  const title = input.operation.replace(/_/g, ' ');
   return [
-    `[Razorpay] Failed to ${input.operation}`,
-    input.restaurantId ? `restaurantId=${input.restaurantId}` : '',
-    input.planType ? `planType=${input.planType}` : '',
-    `status=${input.details.status ?? 'unknown'}`,
-    `code=${input.details.code ?? 'none'}`,
-    `description=${input.details.description ?? 'none'}`,
-    input.details.field ? `field=${input.details.field}` : '',
+    `[Razorpay] Failed to ${title}`,
+    `operation: ${input.operation}`,
+    input.restaurantId ? `restaurantId: ${input.restaurantId}` : '',
+    input.planType ? `planType: ${input.planType}` : '',
+    `httpStatus: ${input.details.status ?? 'unknown'}`,
+    `razorpayCode: ${input.details.code ?? 'none'}`,
+    `description: ${input.details.description ?? 'none'}`,
+    input.details.field ? `field: ${input.details.field}` : '',
   ]
     .filter(Boolean)
-    .join(' ');
+    .join('\n');
 }
 
 export function planMissingOnAccount(details: RazorpayErrorDetails): boolean {
   const description = details.description || '';
-  return (
-    (details.status === 400 || details.status === 404) &&
-    /does not exist/i.test(description)
-  );
+  const missing = /does not exist/i.test(description);
+  if (!missing) return false;
+  if (details.status === 400 || details.status === 404) return true;
+  return details.status == null && /id provided/i.test(description);
 }
 
 /**
