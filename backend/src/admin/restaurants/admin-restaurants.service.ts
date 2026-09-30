@@ -39,15 +39,19 @@ import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 
 function checkoutFailureReason(err: unknown): string {
   if (err && typeof err === 'object' && 'getResponse' in err) {
-    const getResponse = (err as { getResponse?: () => unknown }).getResponse;
-    if (typeof getResponse === 'function') {
-      const body = getResponse();
-      if (typeof body === 'string' && body.trim()) return body.trim();
-      if (body && typeof body === 'object' && 'message' in body) {
-        const message = (body as { message?: unknown }).message;
-        if (typeof message === 'string' && message.trim() && message !== 'Service Unavailable') {
-          return message.trim();
+    const target = err as { getResponse?: () => unknown };
+    if (typeof target.getResponse === 'function') {
+      try {
+        const body = target.getResponse();
+        if (typeof body === 'string' && body.trim()) return body.trim();
+        if (body && typeof body === 'object' && 'message' in body) {
+          const message = (body as { message?: unknown }).message;
+          if (typeof message === 'string' && message.trim() && message !== 'Service Unavailable') {
+            return message.trim();
+          }
         }
+      } catch {
+        // A detached getResponse throws; fall through to Error.message.
       }
     }
   }

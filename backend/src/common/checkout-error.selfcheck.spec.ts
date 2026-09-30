@@ -1,8 +1,9 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
 import {
   CHECKOUT_PLAN_UNAVAILABLE,
   checkoutErrorBody,
   isPaidCheckoutRequest,
+  readCheckoutErrorBody,
   readHttpException,
 } from './checkout-error';
 
@@ -20,6 +21,16 @@ describe('checkout error responses', () => {
     expect(body.paymentRequired).toBe(true);
     expect(body.restaurantId).toBe('rest_1');
     expect(JSON.stringify(body)).not.toMatch(/rzp_|secret|authorization/i);
+  });
+
+  it('reads a ServiceUnavailableException without detaching getResponse', () => {
+    const exception = new ServiceUnavailableException(
+      checkoutErrorBody({ planUnavailable: true, restaurantId: 'rest_1' }),
+    );
+    const detached = exception.getResponse;
+    expect(() => detached()).toThrow(/response/);
+    expect(readCheckoutErrorBody(exception)?.code).toBe(CHECKOUT_PLAN_UNAVAILABLE);
+    expect(readCheckoutErrorBody(exception)?.restaurantId).toBe('rest_1');
   });
 
   it('reads HttpException status without relying on instanceof', () => {

@@ -27,11 +27,11 @@ export function checkoutErrorBody(input?: {
 
 export function readCheckoutErrorBody(err: unknown): CheckoutErrorBody | null {
   if (!err || typeof err !== 'object' || !('getResponse' in err)) return null;
-  const getResponse = (err as { getResponse?: () => unknown }).getResponse;
-  if (typeof getResponse !== 'function') return null;
+  const target = err as { getResponse?: () => unknown };
+  if (typeof target.getResponse !== 'function') return null;
   let body: unknown;
   try {
-    body = getResponse();
+    body = target.getResponse();
   } catch {
     return null;
   }
