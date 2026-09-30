@@ -28,6 +28,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { parseMonthlyPriceLabel } from '../sales/sales.utils';
 import { RazorpayClientService } from './razorpay-client.service';
 import {
+  classifyCheckoutFailure,
   isValidRazorpayPlanId,
   planConfigurationError,
   planMissingOnAccount,
@@ -224,17 +225,15 @@ export class PaymentsService implements OnModuleInit {
 
   private refusePaidCheckout(input: {
     restaurantId: string;
-    planUnavailable?: boolean;
-    reason?: string | null;
+    operation: 'fetch_plan' | 'create_customer' | 'create_subscription' | 'config' | 'plan_id';
     details?: RazorpayErrorDetails;
+    planMismatch?: boolean;
+    planIdInvalid?: boolean;
   }) {
     return new ServiceUnavailableException(
       checkoutErrorBody({
         restaurantId: input.restaurantId,
-        planUnavailable:
-          input.planUnavailable ||
-          (input.details ? planMissingOnAccount(input.details) : false),
-        reason: input.reason || input.details?.description,
+        code: classifyCheckoutFailure(input),
       }),
     );
   }
@@ -273,7 +272,7 @@ export class PaymentsService implements OnModuleInit {
       );
       throw this.refusePaidCheckout({
         restaurantId: sub.restaurantId,
-        reason: 'Razorpay credentials are not configured.',
+        operation: 'config',
       });
     }
 
@@ -288,8 +287,8 @@ export class PaymentsService implements OnModuleInit {
       );
       throw this.refusePaidCheckout({
         restaurantId: sub.restaurantId,
-        planUnavailable: true,
-        reason: 'The configured Razorpay plan id is missing or invalid.',
+        operation: 'plan_id',
+        planIdInvalid: true,
       });
     }
 
@@ -310,6 +309,7 @@ export class PaymentsService implements OnModuleInit {
       );
       throw this.refusePaidCheckout({
         restaurantId: sub.restaurantId,
+        operation: 'fetch_plan',
         details,
       });
     }
@@ -320,8 +320,8 @@ export class PaymentsService implements OnModuleInit {
       );
       throw this.refusePaidCheckout({
         restaurantId: sub.restaurantId,
-        planUnavailable: true,
-        reason: planMismatch,
+        operation: 'fetch_plan',
+        planMismatch: true,
       });
     }
 
@@ -356,6 +356,7 @@ export class PaymentsService implements OnModuleInit {
         );
         throw this.refusePaidCheckout({
           restaurantId: sub.restaurantId,
+          operation: 'create_customer',
           details,
         });
       }
@@ -426,6 +427,7 @@ export class PaymentsService implements OnModuleInit {
         );
         throw this.refusePaidCheckout({
           restaurantId: sub.restaurantId,
+          operation: 'create_subscription',
           details,
         });
       }

@@ -32,22 +32,26 @@ function sanitizePaymentText(value) {
     .trim();
 }
 
-function setupFailureMessage(detail) {
-  const clean = sanitizePaymentText(detail);
-  if (!clean) return 'Razorpay payment setup failed. Please retry Razorpay Checkout.';
-  if (/^Razorpay payment setup failed\./i.test(clean)) return clean;
-  const sentence = /[.!?]$/.test(clean) ? clean : `${clean}.`;
-  return `Razorpay payment setup failed. ${sentence} Please retry Razorpay Checkout.`;
-}
+const CLASSIFIED_SETUP_MESSAGES = {
+  RAZORPAY_AUTHENTICATION_FAILED:
+    'Razorpay Live credentials are invalid. Please contact the platform administrator.',
+  RAZORPAY_PLAN_UNAVAILABLE:
+    'The selected Razorpay Live plan is not available. Please contact the platform administrator.',
+  RAZORPAY_PLAN_MISMATCH:
+    'The Razorpay Live plan configuration does not match the selected DilYum plan.',
+  RAZORPAY_CUSTOMER_CREATION_FAILED: 'Razorpay customer setup failed. Please retry.',
+  RAZORPAY_SUBSCRIPTION_CREATION_FAILED:
+    'Razorpay subscription setup failed. Please retry.',
+  RAZORPAY_CHECKOUT_INITIALIZATION_FAILED:
+    'Razorpay payment setup failed. Please retry Razorpay Checkout.',
+};
 
 export function paymentSetupErrorMessage(err) {
   const code = err?.data?.code;
-  const paymentFailure =
-    code === 'RAZORPAY_PLAN_UNAVAILABLE' ||
-    code === 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED' ||
-    Boolean(err?.data?.paymentRequired);
+  if (CLASSIFIED_SETUP_MESSAGES[code]) return CLASSIFIED_SETUP_MESSAGES[code];
+  const paymentFailure = Boolean(err?.data?.paymentRequired);
   if (paymentFailure) {
-    return setupFailureMessage(err?.data?.reason || err?.data?.message || err?.message);
+    return CLASSIFIED_SETUP_MESSAGES.RAZORPAY_CHECKOUT_INITIALIZATION_FAILED;
   }
   const raw = sanitizePaymentText(err?.message);
   if (!raw || /something went wrong on the server/i.test(raw) || /internal server error/i.test(raw)) {

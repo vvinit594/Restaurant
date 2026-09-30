@@ -1,43 +1,35 @@
-import { clientSafeRazorpayReason } from '../payments/razorpay-diagnostics';
+import {
+  CHECKOUT_FAILURE_CODES,
+  checkoutFailureMessage,
+  type CheckoutFailureCode,
+} from '../payments/razorpay-diagnostics';
 
 export const CHECKOUT_INIT_FAILED = 'RAZORPAY_CHECKOUT_INITIALIZATION_FAILED';
 export const CHECKOUT_PLAN_UNAVAILABLE = 'RAZORPAY_PLAN_UNAVAILABLE';
 
 export type CheckoutErrorBody = {
   success: false;
-  code: typeof CHECKOUT_INIT_FAILED | typeof CHECKOUT_PLAN_UNAVAILABLE;
+  code: CheckoutFailureCode;
   message: string;
   paymentRequired: true;
   restaurantId?: string;
-  reason?: string;
 };
 
 export function checkoutErrorBody(input?: {
+  code?: CheckoutFailureCode;
   planUnavailable?: boolean;
   restaurantId?: string | null;
   reason?: string | null;
 }): CheckoutErrorBody {
   const restaurantId = String(input?.restaurantId || '').trim();
-  const reason = clientSafeRazorpayReason(input?.reason);
-  const detail =
-    reason ||
-    (input?.planUnavailable
-      ? 'Razorpay payment plan is not available for the current account.'
-      : '');
-  const sentence = detail ? (detail.endsWith('.') ? detail : `${detail}.`) : '';
-  const message = [
-    'Razorpay payment setup failed.',
-    sentence,
-    'Please retry Razorpay Checkout.',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const code: CheckoutFailureCode =
+    input?.code ||
+    (input?.planUnavailable ? CHECKOUT_PLAN_UNAVAILABLE : CHECKOUT_INIT_FAILED);
   return {
     success: false,
-    code: input?.planUnavailable ? CHECKOUT_PLAN_UNAVAILABLE : CHECKOUT_INIT_FAILED,
-    message,
+    code,
+    message: checkoutFailureMessage(code),
     paymentRequired: true,
-    ...(reason ? { reason } : {}),
     ...(restaurantId ? { restaurantId } : {}),
   };
 }
@@ -54,7 +46,12 @@ export function readCheckoutErrorBody(err: unknown): CheckoutErrorBody | null {
   }
   if (!body || typeof body !== 'object') return null;
   const code = (body as { code?: unknown }).code;
-  if (code !== CHECKOUT_INIT_FAILED && code !== CHECKOUT_PLAN_UNAVAILABLE) return null;
+  if (
+    typeof code !== 'string' ||
+    !CHECKOUT_FAILURE_CODES.includes(code as CheckoutFailureCode)
+  ) {
+    return null;
+  }
   return body as CheckoutErrorBody;
 }
 

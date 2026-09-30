@@ -12,6 +12,7 @@ import {
   readHttpException,
 } from '../checkout-error';
 import {
+  classifyCheckoutFailure,
   planMissingOnAccount,
   razorpayErrorDetails,
 } from '../../payments/razorpay-diagnostics';
@@ -58,8 +59,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     ) {
       res.status(HttpStatus.SERVICE_UNAVAILABLE).json(
         checkoutErrorBody({
-          planUnavailable: planMissingOnAccount(details),
-          reason: details.description,
+          code: classifyCheckoutFailure({
+            operation: planMissingOnAccount(details) ? 'fetch_plan' : 'config',
+            details,
+          }),
         }),
       );
       return;
