@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
@@ -93,6 +94,83 @@ export class CreateCouponDto {
   @IsInt()
   @Min(1)
   usageLimit?: number;
+}
+
+export class EngagementCouponQueryDto {
+  @Transform(({ value }) => String(value || 'all').trim().toLowerCase())
+  @IsOptional()
+  @IsIn(['all', 'active'])
+  status?: string;
+}
+
+export class UpdateCouponDto {
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  title?: string;
+
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @Transform(({ value }) =>
+    value == null || value === '' ? undefined : String(value).trim().toUpperCase(),
+  )
+  @IsOptional()
+  @IsIn(['PERCENT', 'FIXED'])
+  discountType?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  discountValue?: number;
+
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  code?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minimumOrderValue?: number;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maximumDiscount?: number;
+
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  startsAt?: string;
+
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  expiresAt?: string;
+
+  @Type(() => Number)
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  usageLimit?: number;
+
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return value;
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class SendPushNotificationDto {

@@ -319,6 +319,15 @@ export class CustomerService {
           orderId: true,
           couponId: true,
           restaurant: { select: { name: true, slug: true } },
+          coupon: {
+            select: {
+              code: true,
+              title: true,
+              description: true,
+              discountType: true,
+              discountValue: true,
+            },
+          },
         },
       }),
     ]);
@@ -338,6 +347,15 @@ export class CustomerService {
         createdAt: row.createdAt.toISOString(),
         orderId: row.orderId,
         couponId: row.couponId,
+        coupon: row.coupon
+          ? {
+              code: row.coupon.code,
+              title: row.coupon.title,
+              description: row.coupon.description,
+              discountType: row.coupon.discountType,
+              discountValue: Number(row.coupon.discountValue),
+            }
+          : null,
         restaurantName: row.restaurant?.name || 'DilYum',
         restaurantSlug: row.restaurant?.slug || null,
       })),

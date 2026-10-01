@@ -96,8 +96,10 @@ export function getEngagementCustomers(params = {}) {
   });
 }
 
-export function getEngagementCoupons() {
-  return apiRequest('/loyalty/engagement/coupons', {
+export function getEngagementCoupons(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set('status', String(params.status));
+  return apiRequest(`/loyalty/engagement/coupons${qs.toString() ? `?${qs}` : ''}`, {
     method: 'GET',
     headers: authHeaders('viewLoyalty'),
   });
@@ -108,6 +110,21 @@ export function createEngagementCoupon(payload) {
     method: 'POST',
     headers: authHeaders('sendLoyaltyOffers'),
     body: JSON.stringify(payload),
+  });
+}
+
+export function updateEngagementCoupon(id, payload) {
+  return apiRequest(`/loyalty/engagement/coupons/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authHeaders('sendLoyaltyOffers'),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteEngagementCoupon(id) {
+  return apiRequest(`/loyalty/engagement/coupons/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders('sendLoyaltyOffers'),
   });
 }
 

@@ -15,10 +15,13 @@ import {
 import { CustomerPushService } from '../customer/customer-push.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RestaurantContextService } from '../restaurants/restaurant-context.service';
+import { isCouponAttachable } from './coupon-availability';
 import {
   CreateCouponDto,
+  EngagementCouponQueryDto,
   EngagementCustomerQueryDto,
   SendPushNotificationDto,
+  UpdateCouponDto,
 } from './dto/engagement.dto';
 
 const DEFAULT_PAGE = 1;
@@ -110,7 +113,10 @@ export class EngagementService {
     };
   }
 
-  async listCoupons(user: { id: string; role: UserRole; restaurantId?: string }) {
+  async listCoupons(
+    user: { id: string; role: UserRole; restaurantId?: string },
+    query: EngagementCouponQueryDto = {},
+  ) {
     const ctx = await this.restaurantContext.requireActiveMembership(user);
     const rows = await this.prisma.coupon.findMany({
       where: { restaurantId: ctx.restaurantId },
@@ -134,8 +140,13 @@ export class EngagementService {
         _count: { select: { grants: true } },
       },
     });
+    const visible =
+      query.status === 'active'
+        ? rows.filter((row) => isCouponAttachable(row))
+        : rows;
     return {
-      items: rows.map((row) => ({
+      activeCount: rows.filter((row) => row.isActive).length,
+      items: visible.map((row) => ({
         id: row.id,
         title: row.title,
         description: row.description,
@@ -202,6 +213,94 @@ export class EngagementService {
     }
   }
 
+  async updateCoupon(
+    user: { id: string; role: UserRole; restaurantId?: string },
+    couponId: string,
+    dto: UpdateCouponDto,
+  ) {
+    const ctx = await this.restaurantContext.requireActiveMembership(user);
+    const existing = await this.prisma.coupon.findFirst({
+      where: { id: couponId, restaurantId: ctx.restaurantId },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException('Coupon not found.');
+
+    const discountType = dto.discountType as CouponDiscountType | undefined;
+    if (discountType === CouponDiscountType.PERCENT && (dto.discountValue ?? 0) > 100) {
+      throw new BadRequestException('Percentage discount cannot exceed 100.');
+    }
+    if (dto.discountValue != null && dto.discountValue > 100) {
+      const current = await this.prisma.coupon.findFirst({
+        where: { id: existing.id },
+        select: { discountType: true },
+      });
+      const effective = discountType || current?.discountType;
+      if (effective === CouponDiscountType.PERCENT) {
+        throw new BadRequestException('Percentage discount cannot exceed 100.');
+      }
+    }
+
+    const data: Prisma.CouponUpdateInput = {};
+    if (dto.title != null) data.title = dto.title.trim();
+    if (dto.description != null) data.description = dto.description.trim();
+    if (discountType) data.discountType = discountType;
+    if (dto.discountValue != null) data.discountValue = dto.discountValue;
+    if (dto.code != null) data.code = dto.code.trim().toUpperCase();
+    if (dto.minimumOrderValue != null) data.minimumOrderValue = dto.minimumOrderValue;
+    if (dto.maximumDiscount != null) data.maximumDiscount = dto.maximumDiscount;
+    if (dto.startsAt) data.startsAt = new Date(dto.startsAt);
+    if (dto.expiresAt) data.expiresAt = new Date(dto.expiresAt);
+    if (dto.usageLimit != null) data.usageLimit = dto.usageLimit;
+    if (dto.isActive != null) data.isActive = dto.isActive;
+
+    try {
+      const coupon = await this.prisma.coupon.update({
+        where: { id: existing.id },
+        data,
+      });
+      return this.toCouponResponse(coupon);
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new BadRequestException('That coupon code already exists for this restaurant.');
+      }
+      throw err;
+    }
+  }
+
+  async deleteCoupon(
+    user: { id: string; role: UserRole; restaurantId?: string },
+    couponId: string,
+  ) {
+    const ctx = await this.restaurantContext.requireActiveMembership(user);
+    const existing = await this.prisma.coupon.findFirst({
+      where: { id: couponId, restaurantId: ctx.restaurantId },
+      select: { id: true, code: true },
+    });
+    if (!existing) throw new NotFoundException('Coupon not found.');
+    await this.prisma.coupon.delete({ where: { id: existing.id } });
+    return { id: existing.id, code: existing.code, deleted: true };
+  }
+
+  private toCouponResponse(coupon: {
+    id: string;
+    title: string;
+    code: string;
+    discountType: CouponDiscountType;
+    discountValue: Prisma.Decimal;
+    isActive: boolean;
+    description?: string | null;
+  }) {
+    return {
+      id: coupon.id,
+      title: coupon.title,
+      description: coupon.description ?? null,
+      code: coupon.code,
+      discountType: coupon.discountType,
+      discountValue: Number(coupon.discountValue),
+      isActive: coupon.isActive,
+    };
+  }
+
   async listCampaigns(user: { id: string; role: UserRole; restaurantId?: string }) {
     const ctx = await this.restaurantContext.requireActiveMembership(user);
     const rows = await this.prisma.pushCampaign.findMany({
@@ -254,7 +353,11 @@ export class EngagementService {
       description: string | null;
       discountType: CouponDiscountType;
       discountValue: Prisma.Decimal;
+      startsAt: Date;
       expiresAt: Date | null;
+      isActive: boolean;
+      usageLimit: number | null;
+      usedCount: number;
     } | null = null;
 
     if (dto.couponId) {
@@ -267,10 +370,17 @@ export class EngagementService {
           description: true,
           discountType: true,
           discountValue: true,
+          startsAt: true,
           expiresAt: true,
+          isActive: true,
+          usageLimit: true,
+          usedCount: true,
         },
       });
       if (!coupon) throw new NotFoundException('Coupon not found.');
+      if (!isCouponAttachable(coupon)) {
+        throw new BadRequestException('Select an active coupon.');
+      }
     }
 
     const customerIds = await this.resolveRecipients(

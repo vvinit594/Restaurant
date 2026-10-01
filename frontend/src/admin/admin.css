@@ -1710,6 +1710,11 @@
   gap: 14px;
 }
 
+.loyalty-program-count {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 @media (max-width: 960px) {
   .loyalty-toolbar {
     grid-template-columns: 1fr;

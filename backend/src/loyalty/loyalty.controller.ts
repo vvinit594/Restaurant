@@ -25,8 +25,10 @@ import {
 } from './dto/loyalty.dto';
 import {
   CreateCouponDto,
+  EngagementCouponQueryDto,
   EngagementCustomerQueryDto,
   SendPushNotificationDto,
+  UpdateCouponDto,
 } from './dto/engagement.dto';
 import { EngagementService } from './engagement.service';
 import { LoyaltyService } from './loyalty.service';
@@ -63,10 +65,11 @@ export class LoyaltyController {
   @Get('engagement/coupons')
   engagementCoupons(
     @CurrentUser() user: any,
+    @Query() query: EngagementCouponQueryDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     res.setHeader('Cache-Control', 'private, no-store');
-    return this.engagement.listCoupons(user);
+    return this.engagement.listCoupons(user, query);
   }
 
   @Post('engagement/coupons')
@@ -75,6 +78,20 @@ export class LoyaltyController {
     @Body() dto: CreateCouponDto,
   ) {
     return this.engagement.createCoupon(user, dto);
+  }
+
+  @Patch('engagement/coupons/:id')
+  updateEngagementCoupon(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateCouponDto,
+  ) {
+    return this.engagement.updateCoupon(user, id, dto);
+  }
+
+  @Delete('engagement/coupons/:id')
+  deleteEngagementCoupon(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.engagement.deleteCoupon(user, id);
   }
 
   @Get('engagement/campaigns')

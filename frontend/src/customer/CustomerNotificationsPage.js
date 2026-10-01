@@ -86,6 +86,12 @@ export default function CustomerNotificationsPage() {
                 <strong>{row.title}</strong>
                 <span className="customer-muted">{row.restaurantName}</span>
                 <p>{row.message}</p>
+                {row.coupon ? (
+                  <span className="customer-code">
+                    {row.coupon.code} — {row.coupon.discountType === 'FIXED' ? `₹${Number(row.coupon.discountValue)} OFF` : `${Number(row.coupon.discountValue)}% OFF`}
+                    {row.coupon.title ? ` · ${row.coupon.title}` : ''}
+                  </span>
+                ) : null}
                 <span className="customer-muted">{new Date(row.createdAt).toLocaleString('en-IN')}</span>
               </button>
               {row.couponId ? <Link to="/account/coupons">View coupon</Link> : null}

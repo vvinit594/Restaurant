@@ -3,18 +3,20 @@ import Loader from '../components/Loader';
 import { useToast } from '../admin/components/Toast';
 import {
   createEngagementCoupon,
+  deleteEngagementCoupon,
   getEngagementCampaigns,
   getEngagementCoupons,
   getEngagementCustomers,
   sendEngagementNotification,
+  updateEngagementCoupon,
 } from '../services/loyaltyApi';
 
-const INITIAL_COUPON = {
-  title: '20% OFF on your next order',
-  description: 'Exclusive DilYum offer',
+const EMPTY_COUPON = {
+  title: '',
+  description: '',
   discountType: 'PERCENT',
-  discountValue: '20',
-  code: 'WELCOME20',
+  discountValue: '',
+  code: '',
   minimumOrderValue: '',
   maximumDiscount: '',
   expiresAt: '',
@@ -39,7 +41,8 @@ export default function RestaurantEngagementTab({ canSend }) {
   const [loading, setLoading] = useState(true);
   const [coupons, setCoupons] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
-  const [couponForm, setCouponForm] = useState(INITIAL_COUPON);
+  const [couponForm, setCouponForm] = useState(EMPTY_COUPON);
+  const [editingCouponId, setEditingCouponId] = useState('');
   const [sendForm, setSendForm] = useState(INITIAL_SEND);
   const [saving, setSaving] = useState(false);
 
@@ -89,30 +92,92 @@ export default function RestaurantEngagementTab({ canSend }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function couponPayload() {
+    return {
+      title: couponForm.title,
+      description: couponForm.description || undefined,
+      discountType: couponForm.discountType,
+      discountValue: Number(couponForm.discountValue),
+      code: couponForm.code,
+      minimumOrderValue: couponForm.minimumOrderValue
+        ? Number(couponForm.minimumOrderValue)
+        : undefined,
+      maximumDiscount: couponForm.maximumDiscount
+        ? Number(couponForm.maximumDiscount)
+        : undefined,
+      expiresAt: couponForm.expiresAt || undefined,
+      usageLimit: couponForm.usageLimit ? Number(couponForm.usageLimit) : undefined,
+    };
+  }
+
   async function onCreateCoupon(e) {
     e.preventDefault();
     setSaving(true);
     try {
-      const created = await createEngagementCoupon({
-        title: couponForm.title,
-        description: couponForm.description || undefined,
-        discountType: couponForm.discountType,
-        discountValue: Number(couponForm.discountValue),
-        code: couponForm.code,
-        minimumOrderValue: couponForm.minimumOrderValue
-          ? Number(couponForm.minimumOrderValue)
-          : undefined,
-        maximumDiscount: couponForm.maximumDiscount
-          ? Number(couponForm.maximumDiscount)
-          : undefined,
-        expiresAt: couponForm.expiresAt || undefined,
-        usageLimit: couponForm.usageLimit ? Number(couponForm.usageLimit) : undefined,
-      });
-      push(`Coupon ${created.code} created.`);
-      setSendForm((p) => ({ ...p, couponId: created.id }));
+      if (editingCouponId) {
+        const updated = await updateEngagementCoupon(editingCouponId, couponPayload());
+        push(`Coupon ${updated.code} updated.`);
+      } else {
+        const created = await createEngagementCoupon(couponPayload());
+        push(`Coupon ${created.code} created.`);
+        setSendForm((p) => ({ ...p, couponId: created.id }));
+      }
+      setEditingCouponId('');
+      setCouponForm(EMPTY_COUPON);
       await loadCouponsAndCampaigns();
     } catch (err) {
-      push(err.message || 'Could not create coupon.', 'error');
+      push(err.message || 'Could not save coupon.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onEditCoupon(coupon) {
+    setEditingCouponId(coupon.id);
+    setCouponForm({
+      title: coupon.title || '',
+      description: coupon.description || '',
+      discountType: coupon.discountType || 'PERCENT',
+      discountValue: coupon.discountValue ?? '',
+      code: coupon.code || '',
+      minimumOrderValue: coupon.minimumOrderValue ?? '',
+      maximumDiscount: coupon.maximumDiscount ?? '',
+      expiresAt: coupon.expiresAt ? String(coupon.expiresAt).slice(0, 10) : '',
+      usageLimit: coupon.usageLimit ?? '',
+    });
+    setSection('offers');
+  }
+
+  async function onToggleCoupon(coupon) {
+    setSaving(true);
+    try {
+      const updated = await updateEngagementCoupon(coupon.id, { isActive: !coupon.isActive });
+      push(`${updated.code} ${updated.isActive ? 'enabled' : 'disabled'}.`);
+      if (!updated.isActive) {
+        setSendForm((p) => (p.couponId === coupon.id ? { ...p, couponId: '' } : p));
+      }
+      await loadCouponsAndCampaigns();
+    } catch (err) {
+      push(err.message || 'Could not update coupon.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onDeleteCoupon(coupon) {
+    if (!window.confirm(`Delete coupon ${coupon.code}? Other coupons stay unchanged.`)) return;
+    setSaving(true);
+    try {
+      await deleteEngagementCoupon(coupon.id);
+      push(`${coupon.code} deleted.`);
+      if (editingCouponId === coupon.id) {
+        setEditingCouponId('');
+        setCouponForm(EMPTY_COUPON);
+      }
+      setSendForm((p) => (p.couponId === coupon.id ? { ...p, couponId: '' } : p));
+      await loadCouponsAndCampaigns();
+    } catch (err) {
+      push(err.message || 'Could not delete coupon.', 'error');
     } finally {
       setSaving(false);
     }
@@ -245,9 +310,10 @@ export default function RestaurantEngagementTab({ canSend }) {
 
       {section === 'offers' ? (
         <section className="admin-panel">
+          <p className="admin-muted">Active coupons: {coupons.filter((c) => c.isActive).length}</p>
           {canSend ? (
             <form className="admin-form" onSubmit={onCreateCoupon}>
-              <h3>Create coupon</h3>
+              <h3>{editingCouponId ? 'Edit coupon' : 'Create coupon'}</h3>
               <label>Title<input value={couponForm.title} onChange={(e) => setCouponForm((p) => ({ ...p, title: e.target.value }))} required /></label>
               <label>Description<input value={couponForm.description} onChange={(e) => setCouponForm((p) => ({ ...p, description: e.target.value }))} /></label>
               <label>
@@ -262,22 +328,68 @@ export default function RestaurantEngagementTab({ canSend }) {
               <label>Minimum order value<input type="number" min="0" value={couponForm.minimumOrderValue} onChange={(e) => setCouponForm((p) => ({ ...p, minimumOrderValue: e.target.value }))} /></label>
               <label>Maximum discount<input type="number" min="0" value={couponForm.maximumDiscount} onChange={(e) => setCouponForm((p) => ({ ...p, maximumDiscount: e.target.value }))} /></label>
               <label>Expiry date<input type="date" value={couponForm.expiresAt} onChange={(e) => setCouponForm((p) => ({ ...p, expiresAt: e.target.value }))} /></label>
-              <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
-                {saving ? 'Saving…' : 'Create coupon'}
-              </button>
+              <label>Usage limit<input type="number" min="1" value={couponForm.usageLimit} onChange={(e) => setCouponForm((p) => ({ ...p, usageLimit: e.target.value }))} /></label>
+              <div className="admin-row-actions">
+                <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
+                  {saving ? 'Saving…' : editingCouponId ? 'Save coupon' : 'Create coupon'}
+                </button>
+                {editingCouponId ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-ghost"
+                    disabled={saving}
+                    onClick={() => {
+                      setEditingCouponId('');
+                      setCouponForm(EMPTY_COUPON);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
             </form>
           ) : null}
-          <h3>Existing coupons</h3>
+          <h3>Coupons</h3>
           {coupons.length === 0 ? (
             <p className="admin-muted">No coupons yet.</p>
           ) : (
-            <ul className="admin-muted">
+            <div className="loyalty-program-grid">
               {coupons.map((c) => (
-                <li key={c.id}>
-                  {c.title} · {c.code} · granted {c.grantedCount}
-                </li>
+                <article key={c.id} className="loyalty-program-card">
+                  <div className="loyalty-program-head">
+                    <div>
+                      <h3>{c.code}</h3>
+                      <p className="admin-muted">{c.title}</p>
+                    </div>
+                    <span className={`loyalty-status-toggle ${c.isActive ? 'on' : 'off'}`}>
+                      {c.isActive ? 'On' : 'Off'}
+                    </span>
+                  </div>
+                  <p>{couponOfferLabel(c)}</p>
+                  {c.description ? <p className="admin-muted">{c.description}</p> : null}
+                  {c.minimumOrderValue ? (
+                    <p className="admin-muted">Minimum order ₹{c.minimumOrderValue}</p>
+                  ) : null}
+                  <div className="admin-row-actions">
+                    {canSend ? (
+                      <button type="button" className="admin-link-btn" onClick={() => onEditCoupon(c)}>
+                        Edit
+                      </button>
+                    ) : null}
+                    {canSend ? (
+                      <button type="button" className="admin-link-btn" disabled={saving} onClick={() => onToggleCoupon(c)}>
+                        {c.isActive ? 'Disable' : 'Enable'}
+                      </button>
+                    ) : null}
+                    {canSend ? (
+                      <button type="button" className="admin-link-btn" disabled={saving} onClick={() => onDeleteCoupon(c)}>
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
               ))}
-            </ul>
+            </div>
           )}
         </section>
       ) : null}
@@ -310,12 +422,12 @@ export default function RestaurantEngagementTab({ canSend }) {
               </label>
             ) : null}
             <label>
-              Attach coupon
+              Coupon
               <select value={sendForm.couponId} onChange={(e) => setSendForm((p) => ({ ...p, couponId: e.target.value }))}>
                 <option value="">None</option>
-                {coupons.map((c) => (
+                {coupons.filter(isCouponSelectable).map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.title} ({c.code})
+                    {c.code} — {couponOfferLabel(c)}
                   </option>
                 ))}
               </select>
@@ -371,4 +483,19 @@ export default function RestaurantEngagementTab({ canSend }) {
       ) : null}
     </div>
   );
+}
+
+function couponOfferLabel(coupon) {
+  const value = Number(coupon.discountValue);
+  if (coupon.discountType === 'FIXED') return `₹${value} OFF`;
+  return `${value}% OFF`;
+}
+
+function isCouponSelectable(coupon) {
+  if (!coupon.isActive) return false;
+  if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() <= Date.now()) return false;
+  if (coupon.usageLimit != null && Number(coupon.usedCount || 0) >= Number(coupon.usageLimit)) {
+    return false;
+  }
+  return true;
 }

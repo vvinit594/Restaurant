@@ -565,6 +565,9 @@ export default function RestaurantLoyaltyPage() {
           {programsLoading ? <Loader label="Loading loyalty programs…" /> : null}
           {!programsLoading ? (
             <div className="loyalty-program-grid">
+              <p className="admin-muted loyalty-program-count">
+                Active programs: {programs.filter((program) => program.enabled).length}
+              </p>
               {programs.map((program) => (
                 <div key={program.id} className="loyalty-program-card">
                   <div className="loyalty-program-head">
@@ -978,10 +981,11 @@ function formatDateTime(value) {
 
 function buildProgramSummary(program) {
   const config = program.configuration || {};
-  if (program.summary) return program.summary;
-  return Object.entries(config)
-    .map(([key, value]) => `${startCase(key)}: ${value}`)
-    .join(' · ');
+  const entries = Object.entries(config).filter(([, value]) => value !== '' && value != null);
+  if (entries.length) {
+    return entries.map(([key, value]) => `${startCase(key)}: ${value}`).join(' · ');
+  }
+  return program.summary || '';
 }
 
 function buildOfferPreview(form, customerName, restaurantName) {
