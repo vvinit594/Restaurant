@@ -5,6 +5,7 @@ import { RestaurantDishesModule } from '../restaurants/dishes/restaurant-dishes.
 import { EngagementService } from './engagement.service';
 import { LoyaltyController } from './loyalty.controller';
 import { LoyaltyService } from './loyalty.service';
+import { ProgramCouponSync } from './program-coupon.sync';
 import { LoyaltyWhatsappService } from './whatsapp/loyalty-whatsapp.service';
 import { UnconfiguredWhatsappProvider } from './whatsapp/unconfigured-whatsapp.provider';
 
@@ -14,6 +15,7 @@ import { UnconfiguredWhatsappProvider } from './whatsapp/unconfigured-whatsapp.p
   providers: [
     LoyaltyService,
     EngagementService,
+    ProgramCouponSync,
     LoyaltyWhatsappService,
     UnconfiguredWhatsappProvider,
   ],

@@ -26,6 +26,8 @@ import {
   loyaltyProgramList,
   LOYALTY_PROGRAM_DEFINITIONS,
 } from './loyalty-programs';
+import { ProgramCouponSync } from './program-coupon.sync';
+import { readLinkedCouponId } from './program-coupon';
 import { LoyaltyWhatsappService } from './whatsapp/loyalty-whatsapp.service';
 
 const DEFAULT_PAGE = 1;
@@ -37,6 +39,7 @@ export class LoyaltyService {
     private readonly prisma: PrismaService,
     private readonly restaurantContext: RestaurantContextService,
     private readonly whatsapp: LoyaltyWhatsappService,
+    private readonly programCoupons: ProgramCouponSync,
   ) {}
 
   async getStats(user: { id: string; role: UserRole; restaurantId?: string }) {
@@ -434,6 +437,27 @@ export class LoyaltyService {
     }
 
     await this.ensurePrograms(ctx.restaurantId);
+    const current = await this.prisma.restaurantLoyaltyProgram.findUnique({
+      where: {
+        restaurantId_programType: {
+          restaurantId: ctx.restaurantId,
+          programType: programType as LoyaltyProgramType,
+        },
+      },
+    });
+    const configuration = {
+      ...(dto.configuration || {}),
+    } as Record<string, unknown>;
+    const linkedCouponId = readLinkedCouponId(current?.configuration);
+    if (linkedCouponId && !configuration.linkedCouponId) {
+      configuration.linkedCouponId = linkedCouponId;
+    }
+    const enabled = dto.enabled === true;
+    const synced = await this.programCoupons.syncProgram(
+      ctx.restaurantId,
+      { programType, enabled, configuration },
+      user.id,
+    );
     const updated = await this.prisma.restaurantLoyaltyProgram.update({
       where: {
         restaurantId_programType: {
@@ -442,8 +466,8 @@ export class LoyaltyService {
         },
       },
       data: {
-        enabled: dto.enabled === true,
-        configuration: dto.configuration as Prisma.InputJsonValue,
+        enabled,
+        configuration: synced,
       },
     });
 

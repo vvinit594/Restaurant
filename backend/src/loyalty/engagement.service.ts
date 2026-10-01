@@ -16,6 +16,7 @@ import { CustomerPushService } from '../customer/customer-push.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RestaurantContextService } from '../restaurants/restaurant-context.service';
 import { isCouponAttachable } from './coupon-availability';
+import { ProgramCouponSync } from './program-coupon.sync';
 import {
   CreateCouponDto,
   EngagementCouponQueryDto,
@@ -33,6 +34,7 @@ export class EngagementService {
     private readonly prisma: PrismaService,
     private readonly restaurantContext: RestaurantContextService,
     private readonly push: CustomerPushService,
+    private readonly programCoupons: ProgramCouponSync,
   ) {}
 
   async listCustomers(
@@ -118,6 +120,7 @@ export class EngagementService {
     query: EngagementCouponQueryDto = {},
   ) {
     const ctx = await this.restaurantContext.requireActiveMembership(user);
+    await this.programCoupons.backfillEnabledPrograms(ctx.restaurantId, user.id);
     const rows = await this.prisma.coupon.findMany({
       where: { restaurantId: ctx.restaurantId },
       orderBy: { createdAt: 'desc' },

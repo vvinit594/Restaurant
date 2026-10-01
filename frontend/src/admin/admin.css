@@ -1715,6 +1715,88 @@
   margin: 0;
 }
 
+.engagement-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(200px, 0.8fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.engagement-search,
+.engagement-filter {
+  position: relative;
+  min-width: 0;
+  display: block;
+}
+
+.engagement-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.loyalty-engagement .engagement-control,
+.loyalty-engagement .admin-form select.engagement-control {
+  width: 100%;
+  height: 46px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid rgba(180, 110, 50, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--admin-text);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 14px;
+  color-scheme: dark;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.loyalty-engagement .engagement-search .engagement-control {
+  padding-left: 42px;
+}
+
+.loyalty-engagement .engagement-control::placeholder {
+  color: rgba(248, 242, 233, 0.55);
+}
+
+.loyalty-engagement .engagement-control:hover {
+  border-color: rgba(234, 88, 12, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.loyalty-engagement .engagement-control:focus {
+  outline: none;
+  border-color: #ea580c;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.22);
+}
+
+.loyalty-engagement .engagement-select {
+  appearance: none;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23fed7aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  cursor: pointer;
+}
+
+.loyalty-engagement .admin-form select.engagement-select {
+  background-color: rgba(255, 255, 255, 0.06);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23fed7aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+@media (max-width: 720px) {
+  .engagement-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 960px) {
   .loyalty-toolbar {
     grid-template-columns: 1fr;

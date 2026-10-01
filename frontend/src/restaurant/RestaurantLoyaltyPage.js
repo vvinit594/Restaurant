@@ -981,7 +981,10 @@ function formatDateTime(value) {
 
 function buildProgramSummary(program) {
   const config = program.configuration || {};
-  const entries = Object.entries(config).filter(([, value]) => value !== '' && value != null);
+  const hiddenKeys = new Set(['linkedCouponId']);
+  const entries = Object.entries(config).filter(
+    ([key, value]) => !hiddenKeys.has(key) && value !== '' && value != null,
+  );
   if (entries.length) {
     return entries.map(([key, value]) => `${startCase(key)}: ${value}`).join(' · ');
   }

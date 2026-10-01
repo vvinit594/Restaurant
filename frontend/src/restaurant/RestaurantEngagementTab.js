@@ -74,8 +74,14 @@ export default function RestaurantEngagementTab({ canSend }) {
         getEngagementCoupons(),
         getEngagementCampaigns(),
       ]);
-      setCoupons(couponData.items || []);
+      const nextCoupons = couponData.items || [];
+      setCoupons(nextCoupons);
       setCampaigns(campaignData.items || []);
+      setSendForm((current) =>
+        current.couponId && nextCoupons.some((coupon) => coupon.id === current.couponId && isCouponSelectable(coupon))
+          ? current
+          : { ...current, couponId: '' },
+      );
     } catch (err) {
       push(err.message || 'Failed to load offers.', 'error');
     }
@@ -91,6 +97,11 @@ export default function RestaurantEngagementTab({ canSend }) {
     loadCouponsAndCampaigns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (section === 'send') loadCouponsAndCampaigns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
 
   function couponPayload() {
     return {
@@ -191,7 +202,8 @@ export default function RestaurantEngagementTab({ canSend }) {
         title: sendForm.title,
         message: sendForm.message,
         targeting: sendForm.targeting,
-        couponId: sendForm.couponId || undefined,
+        couponId:
+          sendForm.couponId && sendForm.couponId !== 'none' ? sendForm.couponId : undefined,
         customerIds:
           sendForm.targeting === 'INDIVIDUAL' && sendForm.customerId
             ? [sendForm.customerId]
@@ -231,16 +243,28 @@ export default function RestaurantEngagementTab({ canSend }) {
 
       {section === 'customers' ? (
         <section className="admin-panel">
-          <div className="admin-toolbar">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customers"
-            />
-            <select value={targeting} onChange={(e) => setTargeting(e.target.value)}>
-              <option value="ALL">All eligible customers</option>
-              <option value="PREVIOUSLY_ORDERED">Previously ordered</option>
-            </select>
+          <div className="engagement-toolbar">
+            <label className="engagement-search">
+              <span className="engagement-search-icon" aria-hidden="true">🔍</span>
+              <input
+                className="engagement-control"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search customers by name, phone..."
+                aria-label="Search customers"
+              />
+            </label>
+            <label className="engagement-filter">
+              <select
+                className="engagement-control engagement-select"
+                value={targeting}
+                onChange={(e) => setTargeting(e.target.value)}
+                aria-label="Filter customers"
+              >
+                <option value="ALL">All eligible customers</option>
+                <option value="PREVIOUSLY_ORDERED">Previously ordered</option>
+              </select>
+            </label>
           </div>
           {loading ? (
             <Loader variant="inline" label="Loading customers…" />
@@ -423,8 +447,19 @@ export default function RestaurantEngagementTab({ canSend }) {
             ) : null}
             <label>
               Coupon
-              <select value={sendForm.couponId} onChange={(e) => setSendForm((p) => ({ ...p, couponId: e.target.value }))}>
-                <option value="">None</option>
+              <select
+                className="engagement-control engagement-select"
+                value={coupons.some(isCouponSelectable) ? sendForm.couponId : 'unavailable'}
+                onChange={(e) => setSendForm((p) => ({ ...p, couponId: e.target.value === 'none' ? '' : e.target.value }))}
+              >
+                {coupons.some(isCouponSelectable) ? (
+                  <option value="">Select a coupon</option>
+                ) : (
+                  <option value="unavailable" disabled>
+                    No active coupons available
+                  </option>
+                )}
+                {coupons.some(isCouponSelectable) ? <option value="none">None</option> : null}
                 {coupons.filter(isCouponSelectable).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.code} — {couponOfferLabel(c)}
