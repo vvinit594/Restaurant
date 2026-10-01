@@ -23,6 +23,11 @@ export function isPaidActiveSubscription(sub) {
   return (status === 'ACTIVE' && paymentStatus === 'PAID') || status === 'TRIAL';
 }
 
+/**
+ * Pending checkout that already has a Razorpay subscription.
+ * This is "not paid yet", including after the customer closes Checkout.
+ * It is not a signal to poll or to show a confirming state on page load.
+ */
 export function isAwaitingWebhookConfirmation(sub) {
   const status = normalizeBillingStatus(sub?.status);
   const paymentStatus = normalizeBillingStatus(sub?.paymentStatus);
@@ -31,6 +36,11 @@ export function isAwaitingWebhookConfirmation(sub) {
     (paymentStatus === 'PENDING' || !paymentStatus) &&
     Boolean(sub?.razorpaySubscriptionId)
   );
+}
+
+/** Unpaid checkout that can be opened again on the same Razorpay subscription. */
+export function isUnpaidCheckoutPending(sub) {
+  return isAwaitingWebhookConfirmation(sub);
 }
 
 export function isCheckoutNeeded(billing, restaurant) {
@@ -58,7 +68,7 @@ export function checkoutCtaLabel(sub) {
   if (status === 'PENDING' && !sub?.razorpaySubscriptionId) {
     return 'Start Razorpay Checkout';
   }
-  return 'Retry / Start Razorpay Checkout';
+  return 'Retry Payment';
 }
 
 export function isSubscriptionSettled(sub) {

@@ -22,6 +22,7 @@ import {
   isAwaitingWebhookConfirmation,
   isCheckoutNeeded,
   isPaidActiveSubscription,
+  isUnpaidCheckoutPending,
   pickSubscription,
   pollUntilSubscriptionSettled,
 } from '../services/billingRefresh';
@@ -46,6 +47,7 @@ export default function RestaurantDetailPage() {
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
+  const [checkoutOutcome, setCheckoutOutcome] = useState(null);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
@@ -156,28 +158,12 @@ export default function RestaurantDetailPage() {
 
   useEffect(() => {
     cancelledRef.current = false;
-
-    const maybePollPendingCheckout = async (result) => {
-      if (!result) return;
-      const sub = pickSubscription(result.billing, result.restaurant);
-      if (isAwaitingWebhookConfirmation(sub)) {
-        await pollSubscriptionFromBackend();
-      }
-    };
-
-    load().then((result) => {
-      if (!cancelledRef.current) {
-        maybePollPendingCheckout(result);
-      }
-    });
+    load();
 
     const onVisibility = () => {
       if (document.visibilityState !== 'visible' || cancelledRef.current) return;
-      load({ silent: true }).then((result) => {
-        if (!cancelledRef.current) {
-          maybePollPendingCheckout(result);
-        }
-      });
+      if (pollLockRef.current) return;
+      load({ silent: true });
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -293,6 +279,11 @@ export default function RestaurantDetailPage() {
   const showCheckoutCta =
     !confirmingPayment && !paidActive && isCheckoutNeeded(billing, restaurant);
   const showConfirming = confirmingPayment && !paidActive;
+  const unpaidCheckout = isUnpaidCheckoutPending(subscription);
+  const showPaymentNotCompleted =
+    !showConfirming && !paidActive && unpaidCheckout && checkoutOutcome !== 'authorized';
+  const showAwaitingServer =
+    !showConfirming && !paidActive && unpaidCheckout && checkoutOutcome === 'authorized';
 
   return (
     <div className="admin-page">
@@ -427,7 +418,21 @@ export default function RestaurantDetailPage() {
               {showConfirming ? (
                 <div>
                   <dt>Payment</dt>
-                  <dd>Confirming payment with Razorpay…</dd>
+                  <dd>Confirming payment…</dd>
+                </div>
+              ) : null}
+              {showPaymentNotCompleted ? (
+                <div>
+                  <dt>Payment</dt>
+                  <dd>
+                    Payment pending. Your Razorpay payment was not completed.
+                  </dd>
+                </div>
+              ) : null}
+              {showAwaitingServer ? (
+                <div>
+                  <dt>Payment</dt>
+                  <dd>Payment authorized. Waiting for Razorpay to confirm.</dd>
                 </div>
               ) : null}
               {subscriptionStatus === 'SUSPENDED' || paymentStatus === 'FAILED' ? (
@@ -450,13 +455,13 @@ export default function RestaurantDetailPage() {
                       disabled={payBusy}
                       onClick={async () => {
                         setPayBusy(true);
+                        setCheckoutOutcome(null);
                         try {
                           const checkout = await startAdminRestaurantCheckout(restaurantId);
                           const result = await openRazorpaySubscriptionCheckout(checkout);
                           if (result.success) {
-                            push(
-                              'Checkout completed. Confirming subscription status from the server…',
-                            );
+                            setCheckoutOutcome('authorized');
+                            push('Confirming payment…');
                             const latest = await pollSubscriptionFromBackend();
                             const latestSub = pickSubscription(
                               latest?.billing,
@@ -466,11 +471,15 @@ export default function RestaurantDetailPage() {
                               push('Subscription is active.');
                             } else if (isAwaitingWebhookConfirmation(latestSub)) {
                               push(
-                                'Payment is still pending on the server. Refresh this page in a moment — do not start checkout again unless payment actually failed.',
+                                'Payment is still pending on the server. It will activate when Razorpay confirms it.',
                               );
                             }
                           } else {
-                            push(result.error || 'Checkout not completed.', 'error');
+                            setCheckoutOutcome('dismissed');
+                            push(
+                              'Payment was not completed. You can retry payment for this restaurant.',
+                              'error',
+                            );
                             await load({ silent: true });
                           }
                         } catch (err) {
@@ -493,7 +502,7 @@ export default function RestaurantDetailPage() {
                         }
                       }}
                     >
-                      {payBusy ? 'Opening…' : checkoutCtaLabel(subscription)}
+                      {payBusy ? 'Opening Razorpay...' : checkoutCtaLabel(subscription)}
                     </button>
                   </dd>
                 </div>

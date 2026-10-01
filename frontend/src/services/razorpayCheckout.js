@@ -68,6 +68,13 @@ export async function openRazorpaySubscriptionCheckout(checkout) {
   const Razorpay = await loadRazorpayScript();
 
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
     const rzp = new Razorpay({
       key: checkout.keyId,
       subscription_id: checkout.subscriptionId,
@@ -85,8 +92,9 @@ export async function openRazorpaySubscriptionCheckout(checkout) {
       },
       theme: { color: '#ea580c' },
       handler(response) {
-        resolve({
+        finish({
           success: true,
+          dismissed: false,
           paymentId: response.razorpay_payment_id,
           subscriptionId: response.razorpay_subscription_id,
           signature: response.razorpay_signature,
@@ -94,14 +102,19 @@ export async function openRazorpaySubscriptionCheckout(checkout) {
       },
       modal: {
         ondismiss() {
-          resolve({ success: false, error: 'Checkout closed before payment completed.' });
+          finish({
+            success: false,
+            dismissed: true,
+            error: 'Checkout closed before payment completed.',
+          });
         },
       },
     });
     rzp.on('payment.failed', (resp) => {
-      resolve({
+      finish({
         success: false,
-        error: resp?.error?.description || 'Payment failed.',
+        dismissed: true,
+        error: resp?.error?.description || 'Payment was not completed.',
       });
     });
     rzp.open();

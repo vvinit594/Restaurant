@@ -9,6 +9,7 @@ import {
   isAwaitingWebhookConfirmation,
   isCheckoutNeeded,
   isPaidActiveSubscription,
+  isUnpaidCheckoutPending,
   pollUntilSubscriptionSettled,
 } from '../services/billingRefresh';
 
@@ -20,6 +21,7 @@ export default function RestaurantBillingBanner() {
   const [billing, setBilling] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
+  const [checkoutOutcome, setCheckoutOutcome] = useState(null);
   const [error, setError] = useState('');
   const pollLockRef = useRef(false);
   const cancelledRef = useRef(false);
@@ -69,27 +71,12 @@ export default function RestaurantBillingBanner() {
 
   useEffect(() => {
     cancelledRef.current = false;
-
-    const maybePollPendingCheckout = async (result) => {
-      if (!result) return;
-      if (isAwaitingWebhookConfirmation(result.billing?.subscription)) {
-        await pollSubscriptionFromBackend();
-      }
-    };
-
-    load().then((result) => {
-      if (!cancelledRef.current) {
-        maybePollPendingCheckout(result);
-      }
-    });
+    load();
 
     const onVisibility = () => {
       if (document.visibilityState !== 'visible' || cancelledRef.current) return;
-      load().then((result) => {
-        if (!cancelledRef.current) {
-          maybePollPendingCheckout(result);
-        }
-      });
+      if (pollLockRef.current) return;
+      load();
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -115,21 +102,24 @@ export default function RestaurantBillingBanner() {
   const onPay = async () => {
     setBusy(true);
     setError('');
+    setCheckoutOutcome(null);
     try {
       const checkout = await startRestaurantCheckout();
       const result = await openRazorpaySubscriptionCheckout(checkout);
       if (result.success) {
+        setCheckoutOutcome('authorized');
         const latest = await pollSubscriptionFromBackend();
         const latestSub = latest?.billing?.subscription;
         if (isPaidActiveSubscription(latestSub)) {
           setError('');
         } else if (isAwaitingWebhookConfirmation(latestSub)) {
           setError(
-            'Payment is still pending on the server. Refresh this page in a moment — do not start checkout again unless payment actually failed.',
+            'Payment is still pending on the server. It will activate when Razorpay confirms it.',
           );
         }
       } else {
-        setError(result.error || 'Payment was not completed.');
+        setCheckoutOutcome('dismissed');
+        setError('Payment pending. Your Razorpay payment was not completed.');
         await load();
       }
     } catch (err) {
@@ -182,10 +172,32 @@ export default function RestaurantBillingBanner() {
       ) : null}
 
       {confirmingPayment && !paidActive ? (
-        <p className="rest-billing-alert">Confirming payment with Razorpay…</p>
+        <p className="rest-billing-alert">Confirming payment…</p>
       ) : null}
 
-      {subStatus === 'PENDING' && sub.paymentRequired && !paidActive && !confirmingPayment ? (
+      {!confirmingPayment &&
+      !paidActive &&
+      isUnpaidCheckoutPending(sub) &&
+      checkoutOutcome !== 'authorized' ? (
+        <p className="rest-billing-alert">
+          Payment pending. Your Razorpay payment was not completed.
+        </p>
+      ) : null}
+
+      {!confirmingPayment &&
+      !paidActive &&
+      isUnpaidCheckoutPending(sub) &&
+      checkoutOutcome === 'authorized' ? (
+        <p className="rest-billing-alert">
+          Payment authorized. Waiting for Razorpay to confirm.
+        </p>
+      ) : null}
+
+      {subStatus === 'PENDING' &&
+      sub.paymentRequired &&
+      !paidActive &&
+      !confirmingPayment &&
+      !sub.razorpaySubscriptionId ? (
         <p className="rest-billing-alert">
           Paid subscription is pending authorization. Complete Razorpay Checkout to activate.
         </p>
@@ -198,7 +210,7 @@ export default function RestaurantBillingBanner() {
           onClick={onPay}
           disabled={busy}
         >
-          {busy ? 'Opening…' : checkoutCtaLabel(sub)}
+          {busy ? 'Opening Razorpay...' : checkoutCtaLabel(sub)}
         </button>
       ) : null}
 
