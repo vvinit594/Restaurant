@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Loader from '../components/Loader';
 import StatCard from '../admin/components/StatCard';
 import ConfirmDialog from '../admin/components/ConfirmDialog';
@@ -77,6 +77,8 @@ export default function RestaurantLoyaltyPage() {
   const [programModal, setProgramModal] = useState({ open: false, program: null });
   const [programForm, setProgramForm] = useState({});
   const [programSaving, setProgramSaving] = useState(false);
+  const [togglingPrograms, setTogglingPrograms] = useState(() => new Set());
+  const togglingRef = useRef(new Set());
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => {
@@ -272,8 +274,12 @@ export default function RestaurantLoyaltyPage() {
 
   async function onToggleProgram(program, enabled) {
     if (!permissions?.manageLoyaltyPrograms) return;
+    const key = program.programType;
+    if (togglingRef.current.has(key)) return;
+    togglingRef.current.add(key);
+    setTogglingPrograms(new Set(togglingRef.current));
     try {
-      await updateLoyaltyProgram(program.programType, {
+      await updateLoyaltyProgram(key, {
         enabled,
         configuration: program.configuration || {},
       });
@@ -281,7 +287,10 @@ export default function RestaurantLoyaltyPage() {
       const data = await getLoyaltyPrograms();
       setPrograms(data.items || []);
     } catch (err) {
-      push(err.message || 'Could not update loyalty program.', 'error');
+      push(err.message || `Unable to update ${program.title}. Please try again.`, 'error');
+    } finally {
+      togglingRef.current.delete(key);
+      setTogglingPrograms(new Set(togglingRef.current));
     }
   }
 
@@ -568,7 +577,9 @@ export default function RestaurantLoyaltyPage() {
               <p className="admin-muted loyalty-program-count">
                 Active programs: {programs.filter((program) => program.enabled).length}
               </p>
-              {programs.map((program) => (
+              {programs.map((program) => {
+                const toggling = togglingPrograms.has(program.programType);
+                return (
                 <div key={program.id} className="loyalty-program-card">
                   <div className="loyalty-program-head">
                     <div>
@@ -577,11 +588,20 @@ export default function RestaurantLoyaltyPage() {
                     </div>
                     <button
                       type="button"
-                      className={`loyalty-status-toggle ${program.enabled ? 'on' : 'off'}`}
-                      disabled={!permissions?.manageLoyaltyPrograms}
+                      className={`loyalty-status-toggle ${program.enabled ? 'on' : 'off'}${toggling ? ' is-loading' : ''}`}
+                      disabled={toggling || !permissions?.manageLoyaltyPrograms}
+                      aria-pressed={program.enabled}
+                      aria-busy={toggling}
+                      aria-label={program.enabled ? `Disable ${program.title}` : `Enable ${program.title}`}
                       onClick={() => onToggleProgram(program, !program.enabled)}
                     >
-                      {program.enabled ? 'On' : 'Off'}
+                      {toggling ? (
+                        <span className="dy-loader-spinner" aria-hidden="true" />
+                      ) : program.enabled ? (
+                        'On'
+                      ) : (
+                        'Off'
+                      )}
                     </button>
                   </div>
                   <button
@@ -596,7 +616,8 @@ export default function RestaurantLoyaltyPage() {
                     Configure
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : null}
         </section>
