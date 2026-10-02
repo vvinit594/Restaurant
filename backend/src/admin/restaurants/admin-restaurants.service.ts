@@ -637,11 +637,6 @@ export class AdminRestaurantsService {
   }
 
   async getOne(id: string) {
-    try {
-      await this.paymentsService?.syncFromRazorpayIfNeeded(id);
-    } catch {
-      // Profile read must succeed even if Razorpay is unreachable.
-    }
     const restaurant = await this.prisma.restaurant.findFirst({
       where: { id, deletedAt: null },
       include: OWNER_INCLUDE,

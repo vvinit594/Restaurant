@@ -95,41 +95,9 @@ export class PaymentsService implements OnModuleInit {
       return;
     }
     const mode = razorpayKeyMode(this.razorpay.getKeyId());
-    this.logger.log(`[Razorpay] Client ready mode=${mode}`);
-    for (const planCode of ['MONTHLY', 'LAUNCH'] as const) {
-      const planId = getRazorpayPlanIdFromEnv(planCode, {
-        RAZORPAY_MONTHLY_PLAN_ID: this.config.get<string>('RAZORPAY_MONTHLY_PLAN_ID'),
-        RAZORPAY_LAUNCH_PLAN_ID: this.config.get<string>('RAZORPAY_LAUNCH_PLAN_ID'),
-      });
-      if (!planId || !isValidRazorpayPlanId(planId)) {
-        this.logger.error(
-          `[Razorpay] Plan id missing or invalid planType=${planCode} mode=${mode}`,
-        );
-        continue;
-      }
-      try {
-        const remote = await this.razorpay.fetchPlan(planId);
-        const mismatch = planConfigurationError(planCode, remote);
-        if (mismatch) {
-          this.logger.error(
-            `[Razorpay] Plan mismatch planType=${planCode} mode=${mode} period=${remote?.period ?? 'unknown'} interval=${remote?.interval ?? 'unknown'} amount=${remote?.item?.amount ?? 'unknown'} currency=${remote?.item?.currency ?? 'unknown'}`,
-          );
-        } else {
-          this.logger.log(
-            `[Razorpay] Plan verified planType=${planCode} mode=${mode} period=${remote?.period} interval=${remote?.interval} amount=${remote?.item?.amount} currency=${remote?.item?.currency}`,
-          );
-        }
-      } catch (err) {
-        const details = razorpayErrorDetails(err);
-        this.logger.error(
-          razorpayFailureLog({
-            operation: 'fetch_plan',
-            planType: planCode,
-            details,
-          }) + ` mode=${mode}`,
-        );
-      }
-    }
+    this.logger.log(
+      `[Razorpay] Client ready mode=${mode}. Plan checks run during checkout, not at startup.`,
+    );
   }
 
   getPublicKeyId() {
@@ -504,35 +472,33 @@ export class PaymentsService implements OnModuleInit {
   }
 
   async getRestaurantBilling(restaurantId: string) {
-    await this.syncFromRazorpayIfNeeded(restaurantId);
-
-    const sub = await this.prisma.subscription.findFirst({
-      where: {
-        restaurantId,
-        status: {
-          in: [
-            SubscriptionStatus.PENDING,
-            SubscriptionStatus.ACTIVE,
-            SubscriptionStatus.TRIAL,
-            SubscriptionStatus.PAST_DUE,
-            SubscriptionStatus.SUSPENDED,
-          ],
+    const [sub, restaurant, payments] = await Promise.all([
+      this.prisma.subscription.findFirst({
+        where: {
+          restaurantId,
+          status: {
+            in: [
+              SubscriptionStatus.PENDING,
+              SubscriptionStatus.ACTIVE,
+              SubscriptionStatus.TRIAL,
+              SubscriptionStatus.PAST_DUE,
+              SubscriptionStatus.SUSPENDED,
+            ],
+          },
         },
-      },
-      include: { plan: true },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: restaurantId },
-      select: { id: true, name: true, status: true },
-    });
-
-    const payments = await this.prisma.payment.findMany({
-      where: { restaurantId },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
+        include: { plan: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { id: true, name: true, status: true },
+      }),
+      this.prisma.payment.findMany({
+        where: { restaurantId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
 
     if (!sub) {
       return {
@@ -751,9 +717,9 @@ export class PaymentsService implements OnModuleInit {
   }
 
   /**
-   * If DilYum is still PENDING/PAST_DUE/SUSPENDED but Razorpay already has
-   * an active/authenticated subscription, copy that state into the database.
-   * Never throws — profile/billing reads must stay HTTP 200.
+   * Payment retry only. If DilYum is still PENDING/PAST_DUE/SUSPENDED but
+   * Razorpay already has an active/authenticated subscription, copy that
+   * state into the database before checkout. Page reads do not call this.
    */
   async syncFromRazorpayIfNeeded(restaurantId: string): Promise<void> {
     try {

@@ -39,9 +39,8 @@ export class PaymentsController {
   }
 
   /**
-   * Same grace-period job as @Cron(EVERY_HOUR).
-   * GitHub Actions invokes this hourly because in-process timers do not keep
-   * running between Vercel serverless invocations.
+   * GitHub Actions invokes this hourly. In-process Nest schedulers do not
+   * keep running between Vercel serverless invocations.
    */
   @Get('cron/grace-expiry')
   async cronGraceExpiry(@Headers('authorization') authorization?: string) {
