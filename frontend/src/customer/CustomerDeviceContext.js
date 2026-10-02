@@ -21,6 +21,17 @@ const CustomerDeviceContext = createContext(null);
 const PROMPT_DELAY_MS = 1500;
 
 let deviceRegistration;
+let pushConfigRequest;
+
+function loadPushConfig() {
+  if (!pushConfigRequest) {
+    pushConfigRequest = getPushConfig().catch((err) => {
+      pushConfigRequest = null;
+      throw err;
+    });
+  }
+  return pushConfigRequest;
+}
 
 function ensureDeviceRegistered() {
   if (!deviceRegistration) {
@@ -51,7 +62,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function syncGrantedSubscription() {
-  const config = await getPushConfig();
+  const config = await loadPushConfig();
   if (!config?.enabled || !config.vapidPublicKey) return false;
   const registration = await navigator.serviceWorker.register('/push-sw.js');
   const ready = await navigator.serviceWorker.ready;
@@ -75,6 +86,7 @@ async function syncGrantedSubscription() {
 
 export function CustomerDeviceProvider({ children }) {
   const location = useLocation();
+  const customerFacing = isCustomerFacingPath(location.pathname);
   const [ready, setReady] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pushPromptOpen, setPushPromptOpen] = useState(false);
@@ -92,6 +104,10 @@ export function CustomerDeviceProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    if (!customerFacing) {
+      setReady(true);
+      return undefined;
+    }
     let alive = true;
     (async () => {
       try {
@@ -106,7 +122,7 @@ export function CustomerDeviceProvider({ children }) {
     return () => {
       alive = false;
     };
-  }, [refreshUnread]);
+  }, [customerFacing, refreshUnread]);
 
   const syncPushIfGranted = useCallback(async () => {
     if (!isPushApiSupported() || Notification.permission !== 'granted') return false;
@@ -146,7 +162,7 @@ export function CustomerDeviceProvider({ children }) {
       }
       if (wasPushPromptDismissed()) return;
       try {
-        const config = await getPushConfig();
+        const config = await loadPushConfig();
         if (cancelled || !config?.enabled || !config.vapidPublicKey) return;
       } catch {
         return;

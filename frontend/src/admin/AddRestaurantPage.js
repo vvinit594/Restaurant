@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
 import SubscriptionPlanCards from '../components/SubscriptionPlanCards';
@@ -43,6 +43,7 @@ export default function AddRestaurantPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   const [pendingPaymentId, setPendingPaymentId] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
@@ -117,7 +118,9 @@ export default function AddRestaurantPage() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (submitLock.current) return;
     if (!validate()) return;
+    submitLock.current = true;
     setSubmitting(true);
     try {
       if (pendingPaymentId) {
@@ -244,6 +247,7 @@ export default function AddRestaurantPage() {
         'error'
       );
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };

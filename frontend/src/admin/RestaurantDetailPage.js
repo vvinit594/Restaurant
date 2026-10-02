@@ -80,17 +80,19 @@ export default function RestaurantDetailPage() {
     let restaurantData = null;
     let restaurantError = null;
 
-    try {
-      billingData = await getAdminRestaurantBilling(restaurantId);
-    } catch {
-      billingData = null;
-    }
-
-    try {
-      restaurantData = await getRestaurant(restaurantId);
-    } catch (err) {
-      restaurantError = err;
-    }
+    const [billingResult, restaurantResult] = await Promise.all([
+      getAdminRestaurantBilling(restaurantId).then(
+        (data) => ({ data, error: null }),
+        () => ({ data: null, error: null }),
+      ),
+      getRestaurant(restaurantId).then(
+        (data) => ({ data, error: null }),
+        (err) => ({ data: null, error: err }),
+      ),
+    ]);
+    billingData = billingResult.data;
+    restaurantData = restaurantResult.data;
+    restaurantError = restaurantResult.error;
 
     if (!restaurantData && !billingData && restaurantError) {
       throw restaurantError;

@@ -98,11 +98,6 @@ export default function RestaurantEngagementTab({ canSend }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (section === 'send') loadCouponsAndCampaigns();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section]);
-
   function couponPayload() {
     return {
       title: couponForm.title,
@@ -127,15 +122,35 @@ export default function RestaurantEngagementTab({ canSend }) {
     try {
       if (editingCouponId) {
         const updated = await updateEngagementCoupon(editingCouponId, couponPayload());
+        setCoupons((current) =>
+          current.map((coupon) => (coupon.id === editingCouponId ? { ...coupon, ...updated } : coupon)),
+        );
         push(`Coupon ${updated.code} updated.`);
       } else {
         const created = await createEngagementCoupon(couponPayload());
+        setCoupons((current) => [
+          {
+            ...couponPayload(),
+            ...created,
+            isActive: true,
+            description: couponForm.description || null,
+            minimumOrderValue: couponForm.minimumOrderValue
+              ? Number(couponForm.minimumOrderValue)
+              : null,
+            maximumDiscount: couponForm.maximumDiscount
+              ? Number(couponForm.maximumDiscount)
+              : null,
+            expiresAt: couponForm.expiresAt || null,
+            usageLimit: couponForm.usageLimit ? Number(couponForm.usageLimit) : null,
+            usedCount: 0,
+          },
+          ...current.filter((coupon) => coupon.id !== created.id),
+        ]);
         push(`Coupon ${created.code} created.`);
         setSendForm((p) => ({ ...p, couponId: created.id }));
       }
       setEditingCouponId('');
       setCouponForm(EMPTY_COUPON);
-      await loadCouponsAndCampaigns();
     } catch (err) {
       push(err.message || 'Could not save coupon.', 'error');
     } finally {
@@ -163,11 +178,13 @@ export default function RestaurantEngagementTab({ canSend }) {
     setSaving(true);
     try {
       const updated = await updateEngagementCoupon(coupon.id, { isActive: !coupon.isActive });
+      setCoupons((current) =>
+        current.map((item) => (item.id === coupon.id ? { ...item, ...updated } : item)),
+      );
       push(`${updated.code} ${updated.isActive ? 'enabled' : 'disabled'}.`);
       if (!updated.isActive) {
         setSendForm((p) => (p.couponId === coupon.id ? { ...p, couponId: '' } : p));
       }
-      await loadCouponsAndCampaigns();
     } catch (err) {
       push(err.message || 'Could not update coupon.', 'error');
     } finally {
@@ -180,13 +197,13 @@ export default function RestaurantEngagementTab({ canSend }) {
     setSaving(true);
     try {
       await deleteEngagementCoupon(coupon.id);
+      setCoupons((current) => current.filter((item) => item.id !== coupon.id));
       push(`${coupon.code} deleted.`);
       if (editingCouponId === coupon.id) {
         setEditingCouponId('');
         setCouponForm(EMPTY_COUPON);
       }
       setSendForm((p) => (p.couponId === coupon.id ? { ...p, couponId: '' } : p));
-      await loadCouponsAndCampaigns();
     } catch (err) {
       push(err.message || 'Could not delete coupon.', 'error');
     } finally {
@@ -213,7 +230,8 @@ export default function RestaurantEngagementTab({ canSend }) {
       push(
         `Notification sent to ${result.recipientCount} customer(s). Delivered: ${result.deliveredCount}.`,
       );
-      await loadCouponsAndCampaigns();
+      const campaignData = await getEngagementCampaigns();
+      setCampaigns(campaignData.items || []);
     } catch (err) {
       push(err.message || 'Could not send notification.', 'error');
     } finally {

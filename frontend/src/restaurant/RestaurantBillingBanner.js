@@ -25,6 +25,7 @@ export default function RestaurantBillingBanner() {
   const [error, setError] = useState('');
   const pollLockRef = useRef(false);
   const cancelledRef = useRef(false);
+  const billingRef = useRef(null);
 
   const fetchBilling = async () => {
     const data = await getRestaurantBilling();
@@ -35,6 +36,7 @@ export default function RestaurantBillingBanner() {
     try {
       const result = await fetchBilling();
       if (!cancelledRef.current) {
+        billingRef.current = result.billing;
         setBilling(result.billing);
       }
       return result;
@@ -55,6 +57,7 @@ export default function RestaurantBillingBanner() {
         async () => {
           const result = await fetchBilling();
           if (!cancelledRef.current && result?.billing) {
+            billingRef.current = result.billing;
             setBilling(result.billing);
           }
           return result;
@@ -76,6 +79,8 @@ export default function RestaurantBillingBanner() {
     const onVisibility = () => {
       if (document.visibilityState !== 'visible' || cancelledRef.current) return;
       if (pollLockRef.current) return;
+      const sub = billingRef.current?.subscription;
+      if (sub && isPaidActiveSubscription(sub)) return;
       load();
     };
     document.addEventListener('visibilitychange', onVisibility);

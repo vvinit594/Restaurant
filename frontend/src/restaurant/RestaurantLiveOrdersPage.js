@@ -62,7 +62,9 @@ export default function RestaurantLiveOrdersPage() {
 
   useEffect(() => {
     load(false);
-    const id = window.setInterval(() => load(true), 4000);
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load(true);
+    }, 4000);
     return () => window.clearInterval(id);
   }, [load]);
 

@@ -87,6 +87,7 @@ export default function RestaurantLoyaltyPage() {
   }, [searchInput]);
 
   useEffect(() => {
+    if (view !== 'customers') return undefined;
     let alive = true;
     (async () => {
       setStatsLoading(true);
@@ -102,14 +103,16 @@ export default function RestaurantLoyaltyPage() {
     return () => {
       alive = false;
     };
-  }, [push]);
+  }, [view, push]);
 
   useEffect(() => {
+    if (view !== 'customers') return undefined;
     loadCustomers(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filter, sort]);
+  }, [view, search, filter, sort]);
 
   useEffect(() => {
+    if (view !== 'programs') return undefined;
     let alive = true;
     (async () => {
       setProgramsLoading(true);
@@ -125,7 +128,7 @@ export default function RestaurantLoyaltyPage() {
     return () => {
       alive = false;
     };
-  }, [push]);
+  }, [view, push]);
 
   async function loadCustomers(nextPage = pageInfo.page || 1) {
     setListLoading(true);
@@ -279,13 +282,22 @@ export default function RestaurantLoyaltyPage() {
     togglingRef.current.add(key);
     setTogglingPrograms(new Set(togglingRef.current));
     try {
-      await updateLoyaltyProgram(key, {
+      const updated = await updateLoyaltyProgram(key, {
         enabled,
         configuration: program.configuration || {},
       });
       push(`${program.title} ${enabled ? 'enabled' : 'disabled'}.`);
-      const data = await getLoyaltyPrograms();
-      setPrograms(data.items || []);
+      setPrograms((current) =>
+        current.map((item) =>
+          item.programType === key
+            ? {
+                ...item,
+                enabled: updated.enabled,
+                configuration: updated.configuration ?? item.configuration,
+              }
+            : item,
+        ),
+      );
     } catch (err) {
       push(err.message || `Unable to update ${program.title}. Please try again.`, 'error');
     } finally {
@@ -299,14 +311,23 @@ export default function RestaurantLoyaltyPage() {
     if (!programModal.program) return;
     setProgramSaving(true);
     try {
-      await updateLoyaltyProgram(programModal.program.programType, {
+      const updated = await updateLoyaltyProgram(programModal.program.programType, {
         enabled: programModal.program.enabled,
         configuration: normalizeProgramConfig(programModal.program.programType, programForm),
       });
       push(`${programModal.program.title} configuration saved.`);
       setProgramModal({ open: false, program: null });
-      const data = await getLoyaltyPrograms();
-      setPrograms(data.items || []);
+      setPrograms((current) =>
+        current.map((item) =>
+          item.programType === updated.programType
+            ? {
+                ...item,
+                enabled: updated.enabled,
+                configuration: updated.configuration ?? item.configuration,
+              }
+            : item,
+        ),
+      );
     } catch (err) {
       push(err.message || 'Could not save loyalty program.', 'error');
     } finally {

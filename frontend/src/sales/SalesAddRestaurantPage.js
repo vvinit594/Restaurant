@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ImageUploadField from '../components/ImageUploadField';
 import SubscriptionPlanCards from '../components/SubscriptionPlanCards';
@@ -44,6 +44,7 @@ export default function SalesAddRestaurantPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   const [pendingPaymentId, setPendingPaymentId] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
@@ -94,7 +95,9 @@ export default function SalesAddRestaurantPage() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (submitLock.current) return;
     if (!validate()) return;
+    submitLock.current = true;
     setSubmitting(true);
     try {
       if (pendingPaymentId) {
@@ -201,6 +204,7 @@ export default function SalesAddRestaurantPage() {
       }
       push(err.message || 'Could not add restaurant.', 'error');
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };
