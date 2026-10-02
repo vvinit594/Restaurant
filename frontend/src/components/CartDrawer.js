@@ -46,7 +46,7 @@ export default function CartDrawer({
               <div key={item.dishId} className="order-cart-item">
                 <div className="order-cart-item-media">
                   {item.imageUrl ? (
-                    <img src={item.imageUrl} alt="" />
+                    <img src={item.imageUrl} alt="" width="56" height="56" loading="lazy" decoding="async" />
                   ) : (
                     <span className="order-cart-item-ph">🍽</span>
                   )}

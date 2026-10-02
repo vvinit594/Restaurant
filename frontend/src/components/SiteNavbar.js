@@ -176,7 +176,7 @@ export default function SiteNavbar({ cartCount = 0, onCartClick }) {
                       >
                         <span className="restaurants-popup-avatar" aria-hidden="true">
                           {r.logoUrl ? (
-                            <img src={r.logoUrl} alt="" />
+                            <img src={r.logoUrl} alt="" width="42" height="42" loading="lazy" decoding="async" />
                           ) : (
                             '🍽'
                           )}

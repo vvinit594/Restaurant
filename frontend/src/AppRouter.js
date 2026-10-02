@@ -1,57 +1,66 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import Loader from './components/Loader';
 import CustomerApp from './App';
-import './admin/admin.css';
-import AdminLogin from './admin/AdminLogin';
-import AdminLayout from './admin/AdminLayout';
-import AdminDashboard from './admin/AdminDashboard';
-import AdminPlaceholder from './admin/AdminPlaceholder';
-import AdminQrPage from './admin/AdminQrPage';
-import AddRestaurantPage from './admin/AddRestaurantPage';
-import RestaurantsPage from './admin/RestaurantsPage';
-import RestaurantDetailPage from './admin/RestaurantDetailPage';
-import AdminSalesPersonsPage from './admin/AdminSalesPersonsPage';
 import { AdminAuthProvider } from './admin/auth/AdminAuthContext';
 import ProtectedAdminRoute from './admin/auth/ProtectedAdminRoute';
 import { ToastProvider } from './admin/components/Toast';
 import { CustomerDeviceProvider } from './customer/CustomerDeviceContext';
-import CustomerPanelLayout from './customer/CustomerPanelLayout';
-import CustomerOverviewPage from './customer/CustomerOverviewPage';
-import CustomerOrdersPage from './customer/CustomerOrdersPage';
-import CustomerOrderDetailPage from './customer/CustomerOrderDetailPage';
-import CustomerTransactionsPage from './customer/CustomerTransactionsPage';
-import CustomerCouponsPage from './customer/CustomerCouponsPage';
-import CustomerNotificationsPage from './customer/CustomerNotificationsPage';
 import PushPermissionPrompt from './customer/PushPermissionPrompt';
 import './customer/customer.css';
 import { RestaurantAuthProvider } from './restaurant/auth/RestaurantAuthContext';
 import ProtectedRestaurantRoute from './restaurant/auth/ProtectedRestaurantRoute';
-import RestaurantLogin from './restaurant/RestaurantLogin';
-import RestaurantLayout from './restaurant/RestaurantLayout';
-import RestaurantDashboard from './restaurant/RestaurantDashboard';
-import RestaurantMenuPage from './restaurant/RestaurantMenuPage';
-import DishFormPage from './restaurant/DishFormPage';
-import BulkDishesAddPage from './restaurant/BulkDishesAddPage';
-import RestaurantPlaceholder from './restaurant/RestaurantPlaceholder';
-import RestaurantProfilePage from './restaurant/RestaurantProfilePage';
-import RestaurantLoyaltyPage from './restaurant/RestaurantLoyaltyPage';
-import RestaurantQrPage from './restaurant/RestaurantQrPage';
-import RestaurantLiveOrdersPage from './restaurant/RestaurantLiveOrdersPage';
-import RestaurantOrderHistoryPage from './restaurant/RestaurantOrderHistoryPage';
-import PublicRestaurantPage from './pages/PublicRestaurantPage';
-import RestaurantsListingPage from './pages/RestaurantsListingPage';
 import { SalesAuthProvider } from './sales/auth/SalesAuthContext';
 import ProtectedSalesRoute from './sales/auth/ProtectedSalesRoute';
-import SalesLogin from './sales/SalesLogin';
-import SalesLayout from './sales/SalesLayout';
-import SalesDashboardPage from './sales/SalesDashboardPage';
-import SalesAddRestaurantPage from './sales/SalesAddRestaurantPage';
-import SalesMyRestaurantsPage from './sales/SalesMyRestaurantsPage';
-import SalesLeadsPage from './sales/SalesLeadsPage';
-import SalesQrManagementPage from './sales/SalesQrManagementPage';
-import SalesAnalyticsPage from './sales/SalesAnalyticsPage';
-import SalesCommissionPage from './sales/SalesCommissionPage';
-import SalesProfilePage from './sales/SalesProfilePage';
+
+const AdminLogin = lazy(() => import(/* webpackChunkName: "admin-login" */ './admin/AdminLogin'));
+const AdminLayout = lazy(() => import(/* webpackChunkName: "admin-layout" */ './admin/AdminLayout'));
+const AdminDashboard = lazy(() => import(/* webpackChunkName: "admin-dashboard" */ './admin/AdminDashboard'));
+const AdminPlaceholder = lazy(() => import(/* webpackChunkName: "admin-placeholder" */ './admin/AdminPlaceholder'));
+const AdminQrPage = lazy(() => import(/* webpackChunkName: "admin-qr" */ './admin/AdminQrPage'));
+const AddRestaurantPage = lazy(() => import(/* webpackChunkName: "admin-add-restaurant" */ './admin/AddRestaurantPage'));
+const RestaurantsPage = lazy(() => import(/* webpackChunkName: "admin-restaurants" */ './admin/RestaurantsPage'));
+const RestaurantDetailPage = lazy(() => import(/* webpackChunkName: "admin-restaurant-detail" */ './admin/RestaurantDetailPage'));
+const AdminSalesPersonsPage = lazy(() => import(/* webpackChunkName: "admin-sales-persons" */ './admin/AdminSalesPersonsPage'));
+
+const CustomerPanelLayout = lazy(() => import(/* webpackChunkName: "customer-panel" */ './customer/CustomerPanelLayout'));
+const CustomerOverviewPage = lazy(() => import(/* webpackChunkName: "customer-overview" */ './customer/CustomerOverviewPage'));
+const CustomerOrdersPage = lazy(() => import(/* webpackChunkName: "customer-orders" */ './customer/CustomerOrdersPage'));
+const CustomerOrderDetailPage = lazy(() => import(/* webpackChunkName: "customer-order-detail" */ './customer/CustomerOrderDetailPage'));
+const CustomerTransactionsPage = lazy(() => import(/* webpackChunkName: "customer-transactions" */ './customer/CustomerTransactionsPage'));
+const CustomerCouponsPage = lazy(() => import(/* webpackChunkName: "customer-coupons" */ './customer/CustomerCouponsPage'));
+const CustomerNotificationsPage = lazy(() => import(/* webpackChunkName: "customer-notifications" */ './customer/CustomerNotificationsPage'));
+
+const RestaurantLogin = lazy(() => import(/* webpackChunkName: "restaurant-login" */ './restaurant/RestaurantLogin'));
+const RestaurantLayout = lazy(() => import(/* webpackChunkName: "restaurant-layout" */ './restaurant/RestaurantLayout'));
+const RestaurantDashboard = lazy(() => import(/* webpackChunkName: "restaurant-dashboard" */ './restaurant/RestaurantDashboard'));
+const RestaurantMenuPage = lazy(() => import(/* webpackChunkName: "restaurant-menu" */ './restaurant/RestaurantMenuPage'));
+const DishFormPage = lazy(() => import(/* webpackChunkName: "restaurant-dish-form" */ './restaurant/DishFormPage'));
+const BulkDishesAddPage = lazy(() => import(/* webpackChunkName: "restaurant-bulk-dishes" */ './restaurant/BulkDishesAddPage'));
+const RestaurantPlaceholder = lazy(() => import(/* webpackChunkName: "restaurant-placeholder" */ './restaurant/RestaurantPlaceholder'));
+const RestaurantProfilePage = lazy(() => import(/* webpackChunkName: "restaurant-profile" */ './restaurant/RestaurantProfilePage'));
+const RestaurantLoyaltyPage = lazy(() => import(/* webpackChunkName: "restaurant-loyalty" */ './restaurant/RestaurantLoyaltyPage'));
+const RestaurantQrPage = lazy(() => import(/* webpackChunkName: "restaurant-qr" */ './restaurant/RestaurantQrPage'));
+const RestaurantLiveOrdersPage = lazy(() => import(/* webpackChunkName: "restaurant-live-orders" */ './restaurant/RestaurantLiveOrdersPage'));
+const RestaurantOrderHistoryPage = lazy(() => import(/* webpackChunkName: "restaurant-order-history" */ './restaurant/RestaurantOrderHistoryPage'));
+
+const PublicRestaurantPage = lazy(() => import(/* webpackChunkName: "public-restaurant" */ './pages/PublicRestaurantPage'));
+const RestaurantsListingPage = lazy(() => import(/* webpackChunkName: "restaurants-listing" */ './pages/RestaurantsListingPage'));
+
+const SalesLogin = lazy(() => import(/* webpackChunkName: "sales-login" */ './sales/SalesLogin'));
+const SalesLayout = lazy(() => import(/* webpackChunkName: "sales-layout" */ './sales/SalesLayout'));
+const SalesDashboardPage = lazy(() => import(/* webpackChunkName: "sales-dashboard" */ './sales/SalesDashboardPage'));
+const SalesAddRestaurantPage = lazy(() => import(/* webpackChunkName: "sales-add-restaurant" */ './sales/SalesAddRestaurantPage'));
+const SalesMyRestaurantsPage = lazy(() => import(/* webpackChunkName: "sales-restaurants" */ './sales/SalesMyRestaurantsPage'));
+const SalesLeadsPage = lazy(() => import(/* webpackChunkName: "sales-leads" */ './sales/SalesLeadsPage'));
+const SalesQrManagementPage = lazy(() => import(/* webpackChunkName: "sales-qr" */ './sales/SalesQrManagementPage'));
+const SalesAnalyticsPage = lazy(() => import(/* webpackChunkName: "sales-analytics" */ './sales/SalesAnalyticsPage'));
+const SalesCommissionPage = lazy(() => import(/* webpackChunkName: "sales-commission" */ './sales/SalesCommissionPage'));
+const SalesProfilePage = lazy(() => import(/* webpackChunkName: "sales-profile" */ './sales/SalesProfilePage'));
+
+function RouteFallback() {
+  return <Loader label="Loading…" />;
+}
 
 export default function AppRouter() {
   return (
@@ -62,6 +71,7 @@ export default function AppRouter() {
           <ToastProvider>
             <CustomerDeviceProvider>
             <PushPermissionPrompt />
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<CustomerApp />} />
               <Route path="/restaurants" element={<RestaurantsListingPage />} />
@@ -275,6 +285,7 @@ export default function AppRouter() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </Suspense>
             </CustomerDeviceProvider>
           </ToastProvider>
           </SalesAuthProvider>

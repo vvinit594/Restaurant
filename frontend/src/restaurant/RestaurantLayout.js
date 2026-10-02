@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import { useRestaurantAuth } from './auth/RestaurantAuthContext';
 import RestaurantBillingBanner from './RestaurantBillingBanner';
+import '../admin/admin.css';
 
 export default function RestaurantLayout() {
   const { user, permissions, logout } = useRestaurantAuth();
@@ -134,7 +136,9 @@ export default function RestaurantLayout() {
         </header>
         <main className="admin-content">
           <RestaurantBillingBanner />
-          <Outlet />
+          <Suspense fallback={<Loader label="Loading…" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

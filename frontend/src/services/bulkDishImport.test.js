@@ -53,7 +53,7 @@ test('template columns match Add Dish fields + imageFile', () => {
   ]);
 });
 
-test('parses valid excel and skips EXAMPLE rows', () => {
+test('parses valid excel and skips EXAMPLE rows', async () => {
   const buf = makeExcelBuffer([
     {
       name: 'Example',
@@ -73,15 +73,15 @@ test('parses valid excel and skips EXAMPLE rows', () => {
       published: true,
     },
   ]);
-  const parsed = parseBulkDishExcel(buf);
+  const parsed = await parseBulkDishExcel(buf);
   expect(parsed.rows).toHaveLength(1);
   expect(parsed.rows[0].name).toBe('Pizza');
   expect(parsed.rows[0].imageFile).toBe('pizza.jpg');
 });
 
-test('rejects missing required columns', () => {
+test('rejects missing required columns', async () => {
   const buf = makeExcelBuffer([{ dish: 'X' }], ['dish']);
-  expect(() => parseBulkDishExcel(buf)).toThrow(/Required column/);
+  await expect(parseBulkDishExcel(buf)).rejects.toThrow(/Required column/);
 });
 
 test('folder nested path matches Excel basename', () => {

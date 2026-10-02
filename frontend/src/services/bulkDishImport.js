@@ -2,8 +2,16 @@
  * Bulk dish Excel helpers — columns match Add Dish form / CreateDishDto.
  * Images are matched by filename (imageFile), never embedded as Base64.
  */
-import * as XLSX from 'xlsx';
 import { IMAGE_MAX_BYTES, IMAGE_ERROR_SIZE, validateImageFile } from './mediaApi';
+
+let xlsxModulePromise;
+
+function loadXlsx() {
+  if (!xlsxModulePromise) {
+    xlsxModulePromise = import('xlsx');
+  }
+  return xlsxModulePromise;
+}
 
 export const BULK_EXCEL_COLUMNS = [
   'name',
@@ -30,7 +38,8 @@ export const BULK_UPLOAD_CONCURRENCY = 3;
 
 const EXAMPLE_MARKER = 'EXAMPLE — delete this row before import';
 
-export function downloadBulkDishTemplate() {
+export async function downloadBulkDishTemplate() {
+  const XLSX = await loadXlsx();
   const rows = [
     {
       name: 'Pav Bhaji',
@@ -134,7 +143,8 @@ const HEADER_ALIASES = {
  * @param {ArrayBuffer} buffer
  * @returns {{ rows: object[], warnings: string[] }}
  */
-export function parseBulkDishExcel(buffer) {
+export async function parseBulkDishExcel(buffer) {
+  const XLSX = await loadXlsx();
   let workbook;
   try {
     workbook = XLSX.read(buffer, { type: 'array' });
@@ -639,7 +649,8 @@ export function revokePreviewThumbs(previewRows) {
   });
 }
 
-export function downloadBulkErrorReport(previewRows) {
+export async function downloadBulkErrorReport(previewRows) {
+  const XLSX = await loadXlsx();
   const failed = (previewRows || []).filter((r) => r.status === 'invalid');
   const data = [];
   failed.forEach((r) => {

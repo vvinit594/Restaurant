@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import { useSalesAuth } from './auth/SalesAuthContext';
+import '../admin/admin.css';
 
 const NAV = [
   { to: '/sales/dashboard', label: 'Dashboard', end: true },
@@ -96,7 +98,9 @@ export default function SalesLayout() {
           </div>
         </header>
         <main className="admin-content">
-          <Outlet />
+          <Suspense fallback={<Loader label="Loading…" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

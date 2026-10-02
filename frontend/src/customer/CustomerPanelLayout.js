@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import Loader from '../components/Loader';
 import SiteNavbar from '../components/SiteNavbar';
 import './customer.css';
 
@@ -47,7 +48,9 @@ export default function CustomerPanelLayout() {
               </NavLink>
             ))}
           </nav>
-          <Outlet />
+          <Suspense fallback={<Loader label="Loading…" />}>
+            <Outlet />
+          </Suspense>
         </div>
       </div>
     </div>

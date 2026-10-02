@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import CartDrawer from '../components/CartDrawer';
 import Loader from '../components/Loader';
+import { useProgressiveCount } from '../components/useProgressiveCount';
 import OrderCheckoutModal from '../components/OrderCheckoutModal';
 import SiteNavbar from '../components/SiteNavbar';
 import { recordRestaurantVisit } from '../services/customerApi';
@@ -123,15 +124,25 @@ export default function PublicRestaurantPage() {
     return fuse.search(q).map((r) => r.item);
   }, [fuse, searchableList, searchText]);
 
+  const menuResetKey = `${restaurantSlug || ''}|${selectedCategory}|${searchText}`;
+  const { visibleCount, sentinelRef, hasMore } = useProgressiveCount(
+    filteredDishes.length,
+    menuResetKey,
+  );
+  const visibleDishes = useMemo(
+    () => filteredDishes.slice(0, visibleCount),
+    [filteredDishes, visibleCount],
+  );
+
   const dishesByCategory = useMemo(() => {
     const map = new Map();
-    filteredDishes.forEach((dish) => {
+    visibleDishes.forEach((dish) => {
       const key = dish.category || 'Other';
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(dish);
     });
     return [...map.entries()];
-  }, [filteredDishes]);
+  }, [visibleDishes]);
 
   const qtyByDish = useMemo(() => {
     const map = {};
@@ -244,7 +255,14 @@ export default function PublicRestaurantPage() {
       >
         <div className="public-rest-hero-inner">
           {restaurant.logoUrl ? (
-            <img className="public-rest-logo" src={restaurant.logoUrl} alt="" />
+            <img
+              className="public-rest-logo"
+              src={restaurant.logoUrl}
+              alt=""
+              width="72"
+              height="72"
+              fetchPriority="high"
+            />
           ) : (
             <span className="public-rest-logo-fallback" aria-hidden="true">
               🍽
@@ -325,23 +343,30 @@ export default function PublicRestaurantPage() {
               <p className="empty-subtext">Try another search within this restaurant.</p>
             </div>
           ) : (
-            dishesByCategory.map(([category, items]) => (
-              <section key={category} className="public-rest-category-block">
-                <h2 className="public-rest-category-title">{category}</h2>
-                <div className="grid">
-                  {items.map((item) => (
-                    <PublicDishCard
-                      key={item.id}
-                      item={item}
-                      quantity={qtyByDish[item.id] || 0}
-                      onQtyChange={(delta) => {
-                        setDishQty(item, (qtyByDish[item.id] || 0) + delta);
-                      }}
-                    />
-                  ))}
+            <>
+              {dishesByCategory.map(([category, items]) => (
+                <section key={category} className="public-rest-category-block">
+                  <h2 className="public-rest-category-title">{category}</h2>
+                  <div className="grid">
+                    {items.map((item) => (
+                      <PublicDishCard
+                        key={item.id}
+                        item={item}
+                        quantity={qtyByDish[item.id] || 0}
+                        onQtyChange={(delta) => {
+                          setDishQty(item, (qtyByDish[item.id] || 0) + delta);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {hasMore ? (
+                <div ref={sentinelRef} className="menu-progressive-sentinel" role="status">
+                  Loading more dishes…
                 </div>
-              </section>
-            ))
+              ) : null}
+            </>
           )}
         </>
       )}
@@ -438,6 +463,10 @@ function PublicDishCard({ item, quantity = 0, onQtyChange }) {
           src={image}
           alt={item.name}
           className="dish-img"
+          width="400"
+          height="170"
+          loading="lazy"
+          decoding="async"
           onError={(e) => {
             e.target.src = FALLBACK_IMAGE;
           }}

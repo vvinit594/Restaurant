@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Loader from '../components/Loader';
 import { useSalesAuth } from './auth/SalesAuthContext';
+import '../admin/admin.css';
 
 export default function SalesLogin() {
   const { login, isAuthenticated, isSalesPerson, bootstrapping } = useSalesAuth();

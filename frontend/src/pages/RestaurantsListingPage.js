@@ -4,7 +4,7 @@ import Loader from '../components/Loader';
 import SiteNavbar from '../components/SiteNavbar';
 import { getPublicRestaurants } from '../services/publicRestaurantsApi';
 
-function RestaurantCard({ restaurant }) {
+function RestaurantCard({ restaurant, priority = false }) {
   const navigate = useNavigate();
   const [coverFailed, setCoverFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
@@ -32,7 +32,11 @@ function RestaurantCard({ restaurant }) {
           <img
             src={cover}
             alt=""
-            loading="lazy"
+            width="640"
+            height="400"
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
             onError={() => setCoverFailed(true)}
           />
         ) : (
@@ -50,7 +54,10 @@ function RestaurantCard({ restaurant }) {
               <img
                 src={logo}
                 alt=""
-                loading="lazy"
+                width="48"
+                height="48"
+                loading={priority ? 'eager' : 'lazy'}
+                decoding="async"
                 onError={() => setLogoFailed(true)}
               />
             ) : (
@@ -142,8 +149,12 @@ export default function RestaurantsListingPage() {
               {restaurants.length === 1 ? '' : 's'}
             </p>
             <div className="restaurant-grid">
-              {restaurants.map((r) => (
-                <RestaurantCard key={r.id || r.slug} restaurant={r} />
+              {restaurants.map((r, index) => (
+                <RestaurantCard
+                  key={r.id || r.slug}
+                  restaurant={r}
+                  priority={index === 0}
+                />
               ))}
             </div>
           </>

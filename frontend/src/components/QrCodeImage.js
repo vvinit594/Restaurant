@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
+
+let qrModulePromise;
+
+function loadQrCode() {
+  if (!qrModulePromise) {
+    qrModulePromise = import('qrcode').then((mod) => mod.default || mod);
+  }
+  return qrModulePromise;
+}
 
 /**
  * Renders a QR PNG for a public URL. Download via canvas/data URL.
@@ -19,12 +27,15 @@ export default function QrCodeImage({
       setDataUrl('');
       return undefined;
     }
-    QRCode.toDataURL(value, {
-      width: size,
-      margin: 2,
-      color: { dark: '#1c1917', light: '#ffffff' },
-      errorCorrectionLevel: 'M',
-    })
+    loadQrCode()
+      .then((QRCode) =>
+        QRCode.toDataURL(value, {
+          width: size,
+          margin: 2,
+          color: { dark: '#1c1917', light: '#ffffff' },
+          errorCorrectionLevel: 'M',
+        }),
+      )
       .then((url) => {
         if (alive) {
           setDataUrl(url);
@@ -55,6 +66,7 @@ export default function QrCodeImage({
 }
 
 export async function downloadQrPng(value, filename = 'dilyum-qr.png') {
+  const QRCode = await loadQrCode();
   const dataUrl = await QRCode.toDataURL(value, {
     width: 1024,
     margin: 2,

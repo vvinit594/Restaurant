@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Loader from '../components/Loader';
 import { useAdminAuth } from './auth/AdminAuthContext';
+import './admin.css';
 
 export default function AdminLogin() {
   const { login, isAuthenticated, isSuperAdmin, bootstrapping } = useAdminAuth();

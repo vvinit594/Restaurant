@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import Loader from '../components/Loader';
 import { useAdminAuth } from './auth/AdminAuthContext';
+import './admin.css';
 
 const NAV = [
   { to: '/admin', label: 'Dashboard', end: true },
@@ -89,7 +91,9 @@ export default function AdminLayout() {
         </header>
 
         <main className="admin-content">
-          <Outlet />
+          <Suspense fallback={<Loader label="Loading…" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

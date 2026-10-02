@@ -132,7 +132,7 @@ export default function BulkDishesAddPage() {
     }
     try {
       const buffer = await file.arrayBuffer();
-      const parsed = parseBulkDishExcel(buffer);
+      const parsed = await parseBulkDishExcel(buffer);
       setExcelFile(file);
       setExcelRows(parsed.rows);
       setPreview(null);
@@ -495,7 +495,11 @@ export default function BulkDishesAddPage() {
             <button
               type="button"
               className="admin-btn admin-btn-primary"
-              onClick={() => downloadBulkDishTemplate()}
+              onClick={() => {
+                downloadBulkDishTemplate().catch((err) => {
+                  push(err.message || 'Could not download the template.', 'error');
+                });
+              }}
             >
               Download Excel Template
             </button>
@@ -781,7 +785,11 @@ export default function BulkDishesAddPage() {
               <button
                 type="button"
                 className="admin-btn admin-btn-ghost"
-                onClick={() => downloadBulkErrorReport(preview.rows)}
+                onClick={() => {
+                  downloadBulkErrorReport(preview.rows).catch((err) => {
+                    push(err.message || 'Could not download the error report.', 'error');
+                  });
+                }}
               >
                 Download Error Report
               </button>
@@ -854,17 +862,21 @@ export default function BulkDishesAddPage() {
                 type="button"
                 className="admin-btn admin-btn-ghost"
                 onClick={() => {
-                  if (preview?.rows) downloadBulkErrorReport(preview.rows);
-                  else if (result.importErrors?.length) {
-                    downloadBulkErrorReport(
-                      result.importErrors.map((e) => ({
-                        row: e.row,
-                        name: e.name,
-                        status: 'invalid',
-                        errors: [{ field: e.field, message: e.message }],
-                      })),
-                    );
-                  }
+                  const report = preview?.rows
+                    ? downloadBulkErrorReport(preview.rows)
+                    : result.importErrors?.length
+                      ? downloadBulkErrorReport(
+                          result.importErrors.map((e) => ({
+                            row: e.row,
+                            name: e.name,
+                            status: 'invalid',
+                            errors: [{ field: e.field, message: e.message }],
+                          })),
+                        )
+                      : null;
+                  report?.catch((err) => {
+                    push(err.message || 'Could not download the error report.', 'error');
+                  });
                 }}
               >
                 Download Error Report
