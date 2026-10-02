@@ -106,35 +106,24 @@ export class RestaurantPortalService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
+    const dishWhere = { restaurantId: ctx.restaurantId, deletedAt: null };
+    const todayWhere = {
+      restaurantId: ctx.restaurantId,
+      createdAt: { gte: startOfDay },
+      status: { not: 'CANCELLED' as const },
+    };
     const [
-      totalDishes,
-      availableDishes,
-      unavailableDishes,
+      dishGroups,
       categories,
       tables,
       activeQrCodes,
-      newOrders,
-      preparing,
-      ready,
-      todaysOrders,
-      todaysRevenueAgg,
+      orderStatusGroups,
+      today,
     ] = await Promise.all([
-      this.prisma.dish.count({
-        where: { restaurantId: ctx.restaurantId, deletedAt: null },
-      }),
-      this.prisma.dish.count({
-        where: {
-          restaurantId: ctx.restaurantId,
-          deletedAt: null,
-          isAvailable: true,
-        },
-      }),
-      this.prisma.dish.count({
-        where: {
-          restaurantId: ctx.restaurantId,
-          deletedAt: null,
-          isAvailable: false,
-        },
+      this.prisma.dish.groupBy({
+        by: ['isAvailable'],
+        where: dishWhere,
+        _count: { _all: true },
       }),
       this.prisma.category.count({
         where: {
@@ -156,31 +145,33 @@ export class RestaurantPortalService {
           status: QrCodeStatus.ACTIVE,
         },
       }),
-      this.prisma.order.count({
-        where: { restaurantId: ctx.restaurantId, status: 'NEW' },
-      }),
-      this.prisma.order.count({
-        where: { restaurantId: ctx.restaurantId, status: 'PREPARING' },
-      }),
-      this.prisma.order.count({
-        where: { restaurantId: ctx.restaurantId, status: 'READY' },
-      }),
-      this.prisma.order.count({
+      this.prisma.order.groupBy({
+        by: ['status'],
         where: {
           restaurantId: ctx.restaurantId,
-          createdAt: { gte: startOfDay },
-          status: { not: 'CANCELLED' },
+          status: { in: ['NEW', 'PREPARING', 'READY'] },
         },
+        _count: { _all: true },
       }),
       this.prisma.order.aggregate({
-        where: {
-          restaurantId: ctx.restaurantId,
-          createdAt: { gte: startOfDay },
-          status: { not: 'CANCELLED' },
-        },
+        where: todayWhere,
+        _count: { _all: true },
         _sum: { total: true },
       }),
     ]);
+
+    const dishCount = (available: boolean) =>
+      dishGroups.find((row) => row.isAvailable === available)?._count._all ?? 0;
+    const availableDishes = dishCount(true);
+    const unavailableDishes = dishCount(false);
+    const totalDishes = availableDishes + unavailableDishes;
+    const orderCount = (status: 'NEW' | 'PREPARING' | 'READY') =>
+      orderStatusGroups.find((row) => row.status === status)?._count._all ?? 0;
+    const newOrders = orderCount('NEW');
+    const preparing = orderCount('PREPARING');
+    const ready = orderCount('READY');
+    const todaysOrders = today._count._all;
+    const todaysRevenueAgg = today;
 
     return {
       totalDishes,

@@ -324,17 +324,43 @@ export class OrdersService {
     const take = Math.min(Math.max(Number(query.take) || 50, 1), 100);
     const orders = await this.prisma.order.findMany({
       where,
-      include: { items: true },
+      select: {
+        id: true,
+        orderNumber: true,
+        kotNumber: true,
+        restaurantId: true,
+        tableId: true,
+        tableLabel: true,
+        status: true,
+        subtotal: true,
+        taxAmount: true,
+        discountAmount: true,
+        serviceCharge: true,
+        total: true,
+        notes: true,
+        placedAt: true,
+        acceptedAt: true,
+        completedAt: true,
+        cancelledAt: true,
+        createdAt: true,
+        updatedAt: true,
+        restaurant: { select: { name: true } },
+        items: {
+          select: {
+            id: true,
+            dishId: true,
+            dishNameSnapshot: true,
+            unitPriceSnapshot: true,
+            quantity: true,
+            itemTotal: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take,
     });
 
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: restaurantId },
-      select: { name: true },
-    });
-
-    return orders.map((o) => this.toOrderDto(o, restaurant?.name || ''));
+    return orders.map((o) => this.toOrderDto(o, o.restaurant.name));
   }
 
   async getRestaurantOrder(restaurantId: string, orderId: string) {
@@ -573,47 +599,34 @@ export class OrdersService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const [
-      newOrders,
-      preparing,
-      ready,
-      todaysOrders,
-      todaysRevenueAgg,
-    ] = await Promise.all([
-      this.prisma.order.count({
-        where: { restaurantId, status: OrderStatus.NEW },
-      }),
-      this.prisma.order.count({
-        where: { restaurantId, status: OrderStatus.PREPARING },
-      }),
-      this.prisma.order.count({
-        where: { restaurantId, status: OrderStatus.READY },
-      }),
-      this.prisma.order.count({
+    const [statusGroups, today] = await Promise.all([
+      this.prisma.order.groupBy({
+        by: ['status'],
         where: {
           restaurantId,
-          createdAt: { gte: startOfDay },
-          status: { not: OrderStatus.CANCELLED },
+          status: {
+            in: [OrderStatus.NEW, OrderStatus.PREPARING, OrderStatus.READY],
+          },
         },
+        _count: { _all: true },
       }),
       this.prisma.order.aggregate({
         where: {
           restaurantId,
           createdAt: { gte: startOfDay },
-          status: {
-            in: [
-              OrderStatus.COMPLETED,
-              OrderStatus.SERVED,
-              OrderStatus.READY,
-              OrderStatus.PREPARING,
-              OrderStatus.ACCEPTED,
-              OrderStatus.NEW,
-            ],
-          },
+          status: { not: OrderStatus.CANCELLED },
         },
+        _count: { _all: true },
         _sum: { total: true },
       }),
     ]);
+    const statusCount = (status: OrderStatus) =>
+      statusGroups.find((row) => row.status === status)?._count._all ?? 0;
+    const newOrders = statusCount(OrderStatus.NEW);
+    const preparing = statusCount(OrderStatus.PREPARING);
+    const ready = statusCount(OrderStatus.READY);
+    const todaysOrders = today._count._all;
+    const todaysRevenueAgg = today;
 
     return {
       newOrders,

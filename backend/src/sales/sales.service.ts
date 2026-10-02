@@ -26,6 +26,17 @@ import {
   startOfWeek,
 } from './sales.utils';
 
+const salesPlanCardSelect = {
+  code: true,
+  name: true,
+  priceLabel: true,
+  priceAmount: true,
+  billingMonths: true,
+  billingDays: true,
+  branchLimit: true,
+  planType: true,
+};
+
 @Injectable()
 export class SalesService {
   constructor(
@@ -152,7 +163,7 @@ export class SalesService {
         subscriptions: {
           where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
-          include: { plan: true },
+          include: { plan: { select: salesPlanCardSelect } },
         },
         qrCodes: {
           where: { status: 'ACTIVE' },
@@ -177,7 +188,7 @@ export class SalesService {
         subscriptions: {
           where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
-          include: { plan: true },
+          include: { plan: { select: salesPlanCardSelect } },
         },
         qrCodes: {
           where: { status: 'ACTIVE' },
@@ -223,13 +234,20 @@ export class SalesService {
 
     const restaurants = await this.prisma.restaurant.findMany({
       where: { salesPersonId: sp.id, deletedAt: null },
-      include: {
+      select: {
+        status: true,
+        createdAt: true,
         subscriptions: {
           where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
-          include: { plan: true },
+          select: {
+            plan: { select: { priceLabel: true, priceAmount: true } },
+          },
         },
-        qrCodes: { where: { status: 'ACTIVE' } },
+        qrCodes: {
+          where: { status: 'ACTIVE' },
+          select: { id: true },
+        },
       },
     });
 
@@ -301,7 +319,7 @@ export class SalesService {
         subscriptions: {
           take: 1,
           orderBy: { createdAt: 'desc' },
-          include: { plan: true },
+          include: { plan: { select: salesPlanCardSelect } },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -315,10 +333,12 @@ export class SalesService {
 
     const weekStart = startOfWeek();
     const monthStart = startOfMonth();
-    const allForSp = await this.prisma.restaurant.findMany({
-      where: { salesPersonId: sp.id, deletedAt: null },
-      select: { createdAt: true, status: true },
-    });
+    const allForSp = since
+      ? await this.prisma.restaurant.findMany({
+          where: { salesPersonId: sp.id, deletedAt: null },
+          select: { createdAt: true, status: true },
+        })
+      : restaurants;
     const allNonArchived = allForSp.filter(
       (r) => r.status !== RestaurantStatus.ARCHIVED,
     );

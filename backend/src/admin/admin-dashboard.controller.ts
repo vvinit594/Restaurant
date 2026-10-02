@@ -22,20 +22,12 @@ export class AdminDashboardController {
       NOT: { status: RestaurantStatus.ARCHIVED },
     } as const;
 
-    const [
-      totalRestaurants,
-      activeRestaurants,
-      suspendedRestaurants,
-      totalDishes,
-      totalQrCodes,
-      totalTables,
-    ] = await Promise.all([
-      this.prisma.restaurant.count({ where: restaurantWhere }),
-      this.prisma.restaurant.count({
-        where: { ...restaurantWhere, status: RestaurantStatus.ACTIVE },
-      }),
-      this.prisma.restaurant.count({
-        where: { ...restaurantWhere, status: RestaurantStatus.SUSPENDED },
+    const [restaurantGroups, totalDishes, totalQrCodes, totalTables] =
+      await Promise.all([
+      this.prisma.restaurant.groupBy({
+        by: ['status'],
+        where: restaurantWhere,
+        _count: { _all: true },
       }),
       this.prisma.dish.count({
         where: {
@@ -53,6 +45,12 @@ export class AdminDashboardController {
         where: { restaurant: restaurantWhere },
       }),
     ]);
+
+    const restaurantsByStatus = (status: RestaurantStatus) =>
+      restaurantGroups.find((row) => row.status === status)?._count._all ?? 0;
+    const activeRestaurants = restaurantsByStatus(RestaurantStatus.ACTIVE);
+    const suspendedRestaurants = restaurantsByStatus(RestaurantStatus.SUSPENDED);
+    const totalRestaurants = activeRestaurants + suspendedRestaurants;
 
     return {
       totalRestaurants,

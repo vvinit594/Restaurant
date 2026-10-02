@@ -506,7 +506,8 @@ model Dish {
   @@unique([restaurantId, slug])
   @@index([restaurantId])
   @@index([categoryId])
-  @@index([restaurantId, deletedAt, isPublished, isAvailable])
+  /// Public menu: restaurantId + published/available flags, ordered by name.
+  @@index([restaurantId, deletedAt, isPublished, isAvailable, name])
   @@map("dishes")
 }
 

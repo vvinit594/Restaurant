@@ -81,6 +81,17 @@ const LIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.SUSPENDED,
 ];
 
+const adminPlanCardSelect = {
+  code: true,
+  name: true,
+  priceLabel: true,
+  priceAmount: true,
+  billingMonths: true,
+  billingDays: true,
+  branchLimit: true,
+  planType: true,
+};
+
 const OWNER_INCLUDE = {
   salesPerson: {
     select: {
@@ -93,7 +104,7 @@ const OWNER_INCLUDE = {
     where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
     orderBy: { createdAt: 'desc' },
     take: 1,
-    include: { plan: true },
+    include: { plan: { select: adminPlanCardSelect } },
   },
   memberships: {
     where: { role: MembershipRole.RESTAURANT_OWNER, isActive: true },
@@ -167,7 +178,7 @@ export class AdminRestaurantsService {
           where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
           orderBy: { createdAt: 'desc' },
           take: 1,
-          include: { plan: true },
+          include: { plan: { select: adminPlanCardSelect } },
         },
         memberships: {
           where: { role: MembershipRole.RESTAURANT_OWNER, isActive: true },
@@ -864,7 +875,7 @@ export class AdminRestaurantsService {
           where: { status: { in: LIVE_SUBSCRIPTION_STATUSES } },
           orderBy: { createdAt: 'desc' },
           take: 1,
-          include: { plan: true },
+          include: { plan: { select: adminPlanCardSelect } },
         },
         memberships: {
           where: { role: MembershipRole.RESTAURANT_OWNER, isActive: true },
