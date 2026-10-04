@@ -29,8 +29,10 @@ export class AdminRestaurantsController {
   list(
     @Query('search') search?: string,
     @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.restaurantsService.list({ search, status });
+    return this.restaurantsService.list({ search, status, page, limit });
   }
 
   @Get('plans')

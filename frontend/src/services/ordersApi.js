@@ -42,6 +42,8 @@ export async function getRestaurantOrders(params = {}) {
   if (params.status) qs.set('status', params.status);
   if (params.since) qs.set('since', params.since);
   if (params.take) qs.set('take', String(params.take));
+  if (params.page) qs.set('page', String(params.page));
+  if (params.limit) qs.set('limit', String(params.limit));
   const q = qs.toString();
   return apiRequest(`/restaurants/me/orders${q ? `?${q}` : ''}`, {
     method: 'GET',

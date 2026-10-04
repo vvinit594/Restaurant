@@ -29,8 +29,13 @@ export class SalesController {
   }
 
   @Get('analytics')
-  analytics(@CurrentUser() user: SafeUser, @Query('range') range?: string) {
-    return this.salesService.getAnalytics(user, range || 'all');
+  analytics(
+    @CurrentUser() user: SafeUser,
+    @Query('range') range?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.salesService.getAnalytics(user, range || 'all', { page, limit });
   }
 
   @Get('commission')
@@ -44,8 +49,12 @@ export class SalesController {
   }
 
   @Get('restaurants')
-  restaurants(@CurrentUser() user: SafeUser) {
-    return this.salesService.listRestaurants(user);
+  restaurants(
+    @CurrentUser() user: SafeUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.salesService.listRestaurants(user, { page, limit });
   }
 
   @Post('restaurants')
@@ -67,13 +76,21 @@ export class SalesController {
   }
 
   @Get('qr')
-  qr(@CurrentUser() user: SafeUser) {
-    return this.salesService.listQr(user);
+  qr(
+    @CurrentUser() user: SafeUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.salesService.listQr(user, { page, limit });
   }
 
   @Get('leads')
-  leads(@CurrentUser() user: SafeUser) {
-    return this.salesService.listLeads(user);
+  leads(
+    @CurrentUser() user: SafeUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.salesService.listLeads(user, { page, limit });
   }
 
   @Post('leads')

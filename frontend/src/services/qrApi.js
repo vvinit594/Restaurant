@@ -26,8 +26,12 @@ function restaurantHeaders() {
 }
 
 /** GET /api/v1/admin/qr */
-export async function getAdminQrList() {
-  return apiRequest('/admin/qr', { method: 'GET', headers: adminHeaders() });
+export async function getAdminQrList({ page = 1, limit } = {}) {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return apiRequest(`/admin/qr${qs ? `?${qs}` : ''}`, { method: 'GET', headers: adminHeaders() });
 }
 
 /** POST /api/v1/admin/qr/backfill — idempotent missing QR creation */

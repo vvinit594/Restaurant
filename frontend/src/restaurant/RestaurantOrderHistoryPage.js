@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import ListPagination, { readPage } from '../components/ListPagination';
 import Loader from '../components/Loader';
 import { useToast } from '../admin/components/Toast';
 import {
@@ -21,6 +22,8 @@ function formatWhen(iso) {
 export default function RestaurantOrderHistoryPage() {
   const { push } = useToast();
   const [orders, setOrders] = useState([]);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [bill, setBill] = useState(null);
@@ -32,14 +35,16 @@ export default function RestaurantOrderHistoryPage() {
     setLoading(true);
     setError('');
     try {
-      const rows = await getRestaurantOrders({ history: true, take: 100 });
-      setOrders(Array.isArray(rows) ? rows : []);
+      const data = await getRestaurantOrders({ history: true, page });
+      const parsed = readPage(data);
+      setOrders(parsed.items);
+      setMeta(parsed);
     } catch (err) {
       setError(err.message || 'Failed to load order history.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
@@ -150,6 +155,15 @@ export default function RestaurantOrderHistoryPage() {
           </tbody>
         </table>
       </div>
+
+      <ListPagination
+        page={meta.page}
+        totalPages={meta.totalPages}
+        total={meta.total}
+        noun="orders"
+        disabled={loading}
+        onPage={setPage}
+      />
 
       {bill ? (
         <div className="order-cart-overlay" onClick={() => setBill(null)} role="presentation">

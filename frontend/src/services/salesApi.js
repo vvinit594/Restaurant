@@ -19,9 +19,11 @@ export async function getSalesDashboard() {
   return apiRequest('/sales/dashboard', { method: 'GET', headers: authHeaders() });
 }
 
-export async function getSalesAnalytics(range = 'all') {
-  const qs = range ? `?range=${encodeURIComponent(range)}` : '';
-  return apiRequest(`/sales/analytics${qs}`, { method: 'GET', headers: authHeaders() });
+export async function getSalesAnalytics(range = 'all', page = 1) {
+  const params = new URLSearchParams();
+  if (range) params.set('range', range);
+  if (page) params.set('page', String(page));
+  return apiRequest(`/sales/analytics?${params.toString()}`, { method: 'GET', headers: authHeaders() });
 }
 
 export async function getSalesCommission() {
@@ -32,8 +34,11 @@ export async function getSalesPlans() {
   return apiRequest('/sales/plans', { method: 'GET', headers: authHeaders() });
 }
 
-export async function getSalesRestaurants() {
-  return apiRequest('/sales/restaurants', { method: 'GET', headers: authHeaders() });
+export async function getSalesRestaurants({ page = 1, limit } = {}) {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  return apiRequest(`/sales/restaurants?${params.toString()}`, { method: 'GET', headers: authHeaders() });
 }
 
 export async function getSalesRestaurant(id) {
@@ -98,12 +103,18 @@ export async function startSalesRestaurantCheckout(restaurantId) {
   });
 }
 
-export async function getSalesQr() {
-  return apiRequest('/sales/qr', { method: 'GET', headers: authHeaders() });
+export async function getSalesQr({ page = 1, limit } = {}) {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  return apiRequest(`/sales/qr?${params.toString()}`, { method: 'GET', headers: authHeaders() });
 }
 
-export async function getSalesLeads() {
-  return apiRequest('/sales/leads', { method: 'GET', headers: authHeaders() });
+export async function getSalesLeads({ page = 1, limit } = {}) {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  return apiRequest(`/sales/leads?${params.toString()}`, { method: 'GET', headers: authHeaders() });
 }
 
 export async function createSalesLead(payload) {

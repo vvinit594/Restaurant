@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ListPagination, { readPage } from '../components/ListPagination';
 import Loader from '../components/Loader';
 import { getSalesRestaurants } from '../services/salesApi';
 
@@ -13,6 +14,8 @@ function formatWhen(iso) {
 
 export default function SalesMyRestaurantsPage() {
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -21,9 +24,11 @@ export default function SalesMyRestaurantsPage() {
     (async () => {
       setLoading(true);
       try {
-        const data = await getSalesRestaurants();
+        const data = await getSalesRestaurants({ page });
         if (alive) {
-          setRows(Array.isArray(data) ? data : []);
+          const parsed = readPage(data);
+          setRows(parsed.items);
+          setMeta(parsed);
           setError('');
         }
       } catch (err) {
@@ -35,7 +40,7 @@ export default function SalesMyRestaurantsPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [page]);
 
   return (
     <div className="admin-page">
@@ -93,6 +98,15 @@ export default function SalesMyRestaurantsPage() {
           </table>
         </div>
       ) : null}
+
+      <ListPagination
+        page={meta.page}
+        totalPages={meta.totalPages}
+        total={meta.total}
+        noun="restaurants"
+        disabled={loading}
+        onPage={setPage}
+      />
     </div>
   );
 }

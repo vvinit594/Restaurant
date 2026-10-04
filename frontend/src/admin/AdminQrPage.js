@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ListPagination, { readPage } from '../components/ListPagination';
 import Loader from '../components/Loader';
 import QrCodeImage, { downloadQrPng } from '../components/QrCodeImage';
 import {
@@ -14,6 +15,8 @@ import { useToast } from './components/Toast';
 export default function AdminQrPage() {
   const { push } = useToast();
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   /** Mutually exclusive: null | { type: 'preview', ... } | { type: 'confirm', restaurantId, name } */
@@ -24,14 +27,16 @@ export default function AdminQrPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await getAdminQrList();
-      setRows(Array.isArray(data) ? data : []);
+      const data = await getAdminQrList({ page });
+      const parsed = readPage(data);
+      setRows(parsed.items);
+      setMeta(parsed);
     } catch (err) {
       setError(err.message || 'Failed to load QR codes.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
@@ -203,6 +208,15 @@ export default function AdminQrPage() {
           </tbody>
         </table>
       </div>
+
+      <ListPagination
+        page={meta.page}
+        totalPages={meta.totalPages}
+        total={meta.total}
+        noun="restaurants"
+        disabled={loading}
+        onPage={setPage}
+      />
 
       {activeModal?.type === 'preview' && activeModal.qr ? (
         <div

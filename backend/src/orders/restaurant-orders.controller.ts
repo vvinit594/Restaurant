@@ -39,6 +39,8 @@ export class RestaurantOrdersController {
     @Query('history') history?: string,
     @Query('since') since?: string,
     @Query('take') take?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
     res?.setHeader('Cache-Control', 'private, no-store');
@@ -49,6 +51,8 @@ export class RestaurantOrdersController {
       history,
       since,
       take: take ? Number(take) : undefined,
+      page,
+      limit,
     });
   }
 

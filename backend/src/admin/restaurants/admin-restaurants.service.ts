@@ -20,6 +20,7 @@ import {
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { auditLog } from '../../common/audit-log';
+import { pageMeta, parsePageLimit } from '../../common/pagination';
 import {
   checkoutErrorBody,
   readCheckoutErrorBody,
@@ -134,9 +135,10 @@ export class AdminRestaurantsService {
     private readonly paymentsService?: PaymentsService,
   ) {}
 
-  async list(query: { search?: string; status?: string } = {}) {
+  async list(query: { search?: string; status?: string; page?: string | number; limit?: string | number } = {}) {
     const search = String(query.search || '').trim();
     const statusFilter = String(query.status || 'all').toLowerCase();
+    const { page, limit, skip } = parsePageLimit(query.page, query.limit);
 
     const where: Prisma.RestaurantWhereInput = {
       deletedAt: null,
@@ -163,9 +165,13 @@ export class AdminRestaurantsService {
       ];
     }
 
-    const restaurants = await this.prisma.restaurant.findMany({
+    const [total, restaurants] = await Promise.all([
+      this.prisma.restaurant.count({ where }),
+      this.prisma.restaurant.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
       include: {
         salesPerson: {
           select: {
@@ -197,9 +203,13 @@ export class AdminRestaurantsService {
           },
         },
       },
-    });
+    }),
+    ]);
 
-    return restaurants.map((r) => this.toAdminListItem(r));
+    return {
+      ...pageMeta(page, limit, total),
+      items: restaurants.map((r) => this.toAdminListItem(r)),
+    };
   }
 
   /**

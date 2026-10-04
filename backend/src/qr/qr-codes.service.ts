@@ -9,6 +9,7 @@ import {
   RestaurantStatus,
 } from '@prisma/client';
 import { auditLog } from '../common/audit-log';
+import { pageMeta, parsePageLimit } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { RestaurantContextService } from '../restaurants/restaurant-context.service';
 import { QrService } from './qr.service';
@@ -100,13 +101,19 @@ export class QrCodesService {
     return { created, rewritten, total: results.length, restaurants: results };
   }
 
-  async listAdmin() {
-    const restaurants = await this.prisma.restaurant.findMany({
-      where: {
-        deletedAt: null,
-        NOT: { status: RestaurantStatus.ARCHIVED },
-      },
+  async listAdmin(query: { page?: string | number; limit?: string | number } = {}) {
+    const { page, limit, skip } = parsePageLimit(query.page, query.limit);
+    const where = {
+      deletedAt: null,
+      NOT: { status: RestaurantStatus.ARCHIVED },
+    };
+    const [total, restaurants] = await Promise.all([
+      this.prisma.restaurant.count({ where }),
+      this.prisma.restaurant.findMany({
+      where,
       orderBy: { name: 'asc' },
+      skip,
+      take: limit,
       select: {
         id: true,
         name: true,
@@ -118,7 +125,8 @@ export class QrCodesService {
           orderBy: { createdAt: 'desc' },
         },
       },
-    });
+    }),
+    ]);
 
     const out = [];
     for (const r of restaurants) {
@@ -134,7 +142,10 @@ export class QrCodesService {
         qr: qr ? this.qr.toPublicQr(qr, r.slug) : null,
       });
     }
-    return out;
+    return {
+      ...pageMeta(page, limit, total),
+      items: out,
+    };
   }
 
   async getAdminRestaurantQr(restaurantId: string) {

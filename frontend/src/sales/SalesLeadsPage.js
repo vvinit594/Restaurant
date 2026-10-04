@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import ListPagination, { readPage } from '../components/ListPagination';
 import Loader from '../components/Loader';
 import { useToast } from '../admin/components/Toast';
 import {
@@ -21,27 +22,31 @@ const EMPTY = {
 export default function SalesLeadsPage() {
   const { push } = useToast();
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getSalesLeads();
-      setRows(Array.isArray(data) ? data : []);
+      const data = await getSalesLeads({ page });
+      const parsed = readPage(data);
+      setRows(parsed.items);
+      setMeta(parsed);
       setError('');
     } catch (err) {
       setError(err.message || 'Failed to load leads.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const onCreate = async (e) => {
     e.preventDefault();
@@ -50,7 +55,8 @@ export default function SalesLeadsPage() {
       await createSalesLead(form);
       setForm(EMPTY);
       push('Lead created.');
-      await load();
+      if (page !== 1) setPage(1);
+      else await load();
     } catch (err) {
       push(err.message || 'Could not create lead.', 'error');
     } finally {
@@ -180,6 +186,15 @@ export default function SalesLeadsPage() {
           </table>
         </div>
       ) : null}
+
+      <ListPagination
+        page={meta.page}
+        totalPages={meta.totalPages}
+        total={meta.total}
+        noun="leads"
+        disabled={loading}
+        onPage={setPage}
+      />
     </div>
   );
 }

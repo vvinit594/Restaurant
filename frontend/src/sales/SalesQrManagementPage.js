@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import ListPagination, { readPage } from '../components/ListPagination';
 import Loader from '../components/Loader';
 import QrCodeImage, { downloadQrPng } from '../components/QrCodeImage';
 import { getSalesQr } from '../services/salesApi';
@@ -7,6 +8,8 @@ import { useToast } from '../admin/components/Toast';
 export default function SalesQrManagementPage() {
   const { push } = useToast();
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
@@ -16,9 +19,11 @@ export default function SalesQrManagementPage() {
     (async () => {
       setLoading(true);
       try {
-        const data = await getSalesQr();
+        const data = await getSalesQr({ page });
         if (alive) {
-          setRows(Array.isArray(data) ? data : []);
+          const parsed = readPage(data);
+          setRows(parsed.items);
+          setMeta(parsed);
           setError('');
         }
       } catch (err) {
@@ -30,7 +35,7 @@ export default function SalesQrManagementPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [page]);
 
   return (
     <div className="admin-page">
@@ -88,6 +93,15 @@ export default function SalesQrManagementPage() {
           </article>
         ))}
       </div>
+
+      <ListPagination
+        page={meta.page}
+        totalPages={meta.totalPages}
+        total={meta.total}
+        noun="QR codes"
+        disabled={loading}
+        onPage={setPage}
+      />
 
       {preview ? (
         <div className="order-cart-overlay" onClick={() => setPreview(null)} role="presentation">

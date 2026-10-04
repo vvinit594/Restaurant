@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CustomerPushService } from '../customer/customer-push.service';
 import { CustomerService } from '../customer/customer.service';
 import type { CustomerDeviceIdentity } from '../customer/customer-device.service';
+import { pageMeta, parsePageLimit } from '../common/pagination';
 import { CreatePublicOrderDto } from './dto/order.dto';
 
 const ACTIVE_STATUSES: OrderStatus[] = [
@@ -296,6 +297,8 @@ export class OrdersService {
       history?: string;
       since?: string;
       take?: number;
+      page?: string | number;
+      limit?: string | number;
     } = {},
   ) {
     const where: Prisma.OrderWhereInput = { restaurantId };
@@ -321,8 +324,13 @@ export class OrdersService {
       }
     }
 
-    const take = Math.min(Math.max(Number(query.take) || 50, 1), 100);
-    const orders = await this.prisma.order.findMany({
+    const history =
+      query.history === '1' || query.history === 'true';
+    const paging = history ? parsePageLimit(query.page, query.limit) : null;
+    const take = paging
+      ? paging.limit
+      : Math.min(Math.max(Number(query.take) || 50, 1), 100);
+    const orderQuery = {
       where,
       select: {
         id: true,
@@ -356,11 +364,23 @@ export class OrdersService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      take,
-    });
+      orderBy: { createdAt: 'desc' as const },
+      ...(paging ? { skip: paging.skip, take: paging.limit } : { take }),
+    };
 
-    return orders.map((o) => this.toOrderDto(o, o.restaurant.name));
+    if (paging) {
+      const [total, rows] = await Promise.all([
+        this.prisma.order.count({ where }),
+        this.prisma.order.findMany(orderQuery),
+      ]);
+      return {
+        ...pageMeta(paging.page, paging.limit, total),
+        items: rows.map((o) => this.toOrderDto(o, o.restaurant.name)),
+      };
+    }
+
+    const rows = await this.prisma.order.findMany(orderQuery);
+    return rows.map((o) => this.toOrderDto(o, o.restaurant.name));
   }
 
   async getRestaurantOrder(restaurantId: string, orderId: string) {

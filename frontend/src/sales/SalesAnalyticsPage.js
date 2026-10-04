@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import ListPagination from '../components/ListPagination';
 import Loader from '../components/Loader';
 import { getSalesAnalytics } from '../services/salesApi';
 
@@ -12,16 +13,25 @@ const RANGES = [
 
 export default function SalesAnalyticsPage() {
   const [range, setRange] = useState('all');
+  const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const lastRange = useRef(range);
 
   useEffect(() => {
+    const rangeChanged = lastRange.current !== range;
+    if (rangeChanged) lastRange.current = range;
+    const requestPage = rangeChanged ? 1 : page;
+    if (rangeChanged && page !== 1) {
+      setPage(1);
+      return undefined;
+    }
     let alive = true;
     (async () => {
       setLoading(true);
       try {
-        const d = await getSalesAnalytics(range);
+        const d = await getSalesAnalytics(range, requestPage);
         if (alive) {
           setData(d);
           setError('');
@@ -35,7 +45,7 @@ export default function SalesAnalyticsPage() {
     return () => {
       alive = false;
     };
-  }, [range]);
+  }, [range, page]);
 
   const t = data?.totals || {};
 
@@ -61,9 +71,9 @@ export default function SalesAnalyticsPage() {
       </div>
 
       {error ? <div className="admin-alert admin-alert-error">{error}</div> : null}
-      {loading ? <Loader label="Loading analytics…" /> : null}
+      {loading && !data ? <Loader label="Loading analytics…" /> : null}
 
-      {!loading && data ? (
+      {data ? (
         <>
           <div className="sales-metrics-grid">
             <div className="sales-metric-card">
@@ -164,6 +174,14 @@ export default function SalesAnalyticsPage() {
                 </table>
               </div>
             )}
+            <ListPagination
+              page={data.page || page}
+              totalPages={data.totalPages || 1}
+              total={data.total || 0}
+              noun="restaurants"
+              disabled={loading}
+              onPage={setPage}
+            />
           </section>
         </>
       ) : null}

@@ -14,6 +14,7 @@ import { AdminRestaurantsService } from '../admin/restaurants/admin-restaurants.
 import { PaymentsService } from '../payments/payments.service';
 import { CreateRestaurantDto } from '../admin/restaurants/dto/create-restaurant.dto';
 import { auditLog } from '../common/audit-log';
+import { pageMeta, parsePageLimit } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { QrService } from '../qr/qr.service';
 import { CommissionService } from './commission.service';
@@ -150,30 +151,43 @@ export class SalesService {
     return this.adminRestaurants.listPlans();
   }
 
-  async listRestaurants(user: { id: string; role: string }) {
+  async listRestaurants(
+    user: { id: string; role: string },
+    query: { page?: string | number; limit?: string | number } = {},
+  ) {
     const sp = await this.salesContext.requireSalesPerson(user);
-    const rows = await this.prisma.restaurant.findMany({
-      where: {
-        salesPersonId: sp.id,
-        deletedAt: null,
-        NOT: { status: RestaurantStatus.ARCHIVED },
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        subscriptions: {
-          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
-          take: 1,
-          include: { plan: { select: salesPlanCardSelect } },
+    const { page, limit, skip } = parsePageLimit(query.page, query.limit);
+    const where = {
+      salesPersonId: sp.id,
+      deletedAt: null,
+      NOT: { status: RestaurantStatus.ARCHIVED },
+    };
+    const [total, rows] = await Promise.all([
+      this.prisma.restaurant.count({ where }),
+      this.prisma.restaurant.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          subscriptions: {
+            where: { status: { in: ['ACTIVE', 'TRIAL'] } },
+            take: 1,
+            include: { plan: { select: salesPlanCardSelect } },
+          },
+          qrCodes: {
+            where: { status: 'ACTIVE' },
+            take: 1,
+            orderBy: { createdAt: 'asc' },
+          },
         },
-        qrCodes: {
-          where: { status: 'ACTIVE' },
-          take: 1,
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-    });
+      }),
+    ]);
 
-    return rows.map((r) => this.toSalesRestaurant(r));
+    return {
+      ...pageMeta(page, limit, total),
+      items: rows.map((r) => this.toSalesRestaurant(r)),
+    };
   }
 
   async getRestaurant(user: { id: string; role: string }, restaurantId: string) {
@@ -201,30 +215,41 @@ export class SalesService {
     return this.toSalesRestaurant(r);
   }
 
-  async listQr(user: { id: string; role: string }) {
+  async listQr(
+    user: { id: string; role: string },
+    query: { page?: string | number; limit?: string | number } = {},
+  ) {
     const sp = await this.salesContext.requireSalesPerson(user);
-    const restaurants = await this.prisma.restaurant.findMany({
-      where: {
+    const { page, limit, skip } = parsePageLimit(query.page, query.limit);
+    const where = {
+      restaurant: {
         salesPersonId: sp.id,
         deletedAt: null,
         NOT: { status: RestaurantStatus.ARCHIVED },
       },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        qrCodes: {
-          orderBy: { createdAt: 'asc' },
+    };
+    const [total, rows] = await Promise.all([
+      this.prisma.qrCode.count({ where }),
+      this.prisma.qrCode.findMany({
+        where,
+        orderBy: [{ restaurant: { createdAt: 'desc' } }, { createdAt: 'asc' }],
+        skip,
+        take: limit,
+        include: {
+          restaurant: { select: { id: true, name: true, slug: true } },
         },
-      },
-    });
+      }),
+    ]);
 
-    return restaurants.flatMap((r) =>
-      r.qrCodes.map((qr) => ({
-        restaurantName: r.name,
-        restaurantSlug: r.slug,
-        ...this.qrService.toPublicQr(qr, r.slug),
-        restaurantId: r.id,
+    return {
+      ...pageMeta(page, limit, total),
+      items: rows.map((qr) => ({
+        restaurantName: qr.restaurant.name,
+        restaurantSlug: qr.restaurant.slug,
+        ...this.qrService.toPublicQr(qr, qr.restaurant.slug),
+        restaurantId: qr.restaurant.id,
       })),
-    );
+    };
   }
 
   async getDashboard(user: { id: string; role: string }) {
@@ -305,43 +330,86 @@ export class SalesService {
     };
   }
 
-  async getAnalytics(user: { id: string; role: string }, range = 'all') {
+  async getAnalytics(
+    user: { id: string; role: string },
+    range = 'all',
+    query: { page?: string | number; limit?: string | number } = {},
+  ) {
     const sp = await this.salesContext.requireSalesPerson(user);
     const since = this.rangeStart(range);
+    const { page, limit, skip } = parsePageLimit(query.page, query.limit);
+    const where = {
+      salesPersonId: sp.id,
+      deletedAt: null,
+      NOT: { status: RestaurantStatus.ARCHIVED },
+      ...(since ? { createdAt: { gte: since } } : {}),
+    };
+    const subscriptionTake = {
+      take: 1,
+      orderBy: { createdAt: 'desc' as const },
+    };
 
-    const restaurants = await this.prisma.restaurant.findMany({
-      where: {
-        salesPersonId: sp.id,
-        deletedAt: null,
-        ...(since ? { createdAt: { gte: since } } : {}),
-      },
-      include: {
-        subscriptions: {
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          include: { plan: { select: salesPlanCardSelect } },
+    const [nonArchived, pageRows, weekMonthRows] = await Promise.all([
+      this.prisma.restaurant.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        select: {
+          status: true,
+          createdAt: true,
+          subscriptions: {
+            ...subscriptionTake,
+            select: {
+              plan: {
+                select: {
+                  name: true,
+                  code: true,
+                  priceLabel: true,
+                  priceAmount: true,
+                },
+              },
+            },
+          },
         },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+      }),
+      this.prisma.restaurant.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          createdAt: true,
+          subscriptions: {
+            ...subscriptionTake,
+            select: {
+              status: true,
+              startedAt: true,
+              endsAt: true,
+              plan: { select: salesPlanCardSelect },
+            },
+          },
+        },
+      }),
+      since
+        ? this.prisma.restaurant.findMany({
+            where: {
+              salesPersonId: sp.id,
+              deletedAt: null,
+              NOT: { status: RestaurantStatus.ARCHIVED },
+            },
+            select: { createdAt: true },
+          })
+        : Promise.resolve(null),
+    ]);
 
-    const nonArchived = restaurants.filter(
-      (r) => r.status !== RestaurantStatus.ARCHIVED,
-    );
     const active = nonArchived.filter((r) => r.status === RestaurantStatus.ACTIVE);
     const inactive = nonArchived.filter((r) => r.status !== RestaurantStatus.ACTIVE);
 
     const weekStart = startOfWeek();
     const monthStart = startOfMonth();
-    const allForSp = since
-      ? await this.prisma.restaurant.findMany({
-          where: { salesPersonId: sp.id, deletedAt: null },
-          select: { createdAt: true, status: true },
-        })
-      : restaurants;
-    const allNonArchived = allForSp.filter(
-      (r) => r.status !== RestaurantStatus.ARCHIVED,
-    );
+    const allNonArchived = weekMonthRows ?? nonArchived;
 
     const planBreakdown: Record<string, number> = {};
     let subscriptionRevenue = 0;
@@ -377,7 +445,7 @@ export class SalesService {
       monthlyBuckets[key] = (monthlyBuckets[key] || 0) + price;
     }
 
-    const subscriptionRows = nonArchived.map((r) => {
+    const subscriptionRows = pageRows.map((r) => {
       const sub = r.subscriptions[0];
       const plan = sub?.plan;
       return {
@@ -431,6 +499,7 @@ export class SalesService {
         amount,
       })),
       subscriptions: subscriptionRows,
+      ...pageMeta(page, limit, nonArchived.length),
     };
   }
 
@@ -442,13 +511,26 @@ export class SalesService {
     return calculateRestaurantCommission(restaurantCount);
   }
 
-  async listLeads(user: { id: string; role: string }) {
+  async listLeads(
+    user: { id: string; role: string },
+    query: { page?: string | number; limit?: string | number } = {},
+  ) {
     const sp = await this.salesContext.requireSalesPerson(user);
-    const leads = await this.prisma.salesLead.findMany({
-      where: { salesPersonId: sp.id },
-      orderBy: { createdAt: 'desc' },
-    });
-    return leads.map((l) => this.toLeadDto(l));
+    const { page, limit, skip } = parsePageLimit(query.page, query.limit);
+    const where = { salesPersonId: sp.id };
+    const [total, leads] = await Promise.all([
+      this.prisma.salesLead.count({ where }),
+      this.prisma.salesLead.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+    return {
+      ...pageMeta(page, limit, total),
+      items: leads.map((l) => this.toLeadDto(l)),
+    };
   }
 
   async createLead(
@@ -628,29 +710,63 @@ export class SalesService {
   }
 
   async adminListSalesPersons() {
-    const rows = await this.prisma.salesPerson.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { name: true, email: true, phone: true, isActive: true } },
-        restaurants: {
-          where: { deletedAt: null },
-          select: { status: true },
-        },
-        _count: {
-          select: {
-            leads: {
-              where: {
-                convertedRestaurantId: null,
-                status: {
-                  notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST],
+    const [rows, groups] = await Promise.all([
+      this.prisma.salesPerson.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { name: true, email: true, phone: true, isActive: true } },
+          _count: {
+            select: {
+              leads: {
+                where: {
+                  convertedRestaurantId: null,
+                  status: {
+                    notIn: [SalesLeadStatus.CONVERTED, SalesLeadStatus.LOST],
+                  },
                 },
               },
             },
           },
         },
-      },
+      }),
+      this.prisma.restaurant.groupBy({
+        by: ['salesPersonId', 'status'],
+        where: { deletedAt: null, salesPersonId: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const counts = new Map<string, { added: number; active: number }>();
+    for (const group of groups) {
+      if (!group.salesPersonId || group.status === RestaurantStatus.ARCHIVED) {
+        continue;
+      }
+      const current = counts.get(group.salesPersonId) || { added: 0, active: 0 };
+      current.added += group._count._all;
+      if (group.status === RestaurantStatus.ACTIVE) {
+        current.active += group._count._all;
+      }
+      counts.set(group.salesPersonId, current);
+    }
+
+    return rows.map((r) => {
+      const count = counts.get(r.id) || { added: 0, active: 0 };
+      const commission = calculateRestaurantCommission(count.added);
+      return {
+        id: r.id,
+        salesCode: r.salesCode,
+        name: r.user.name,
+        email: r.user.email,
+        phone: r.phone || r.user.phone || '',
+        upiId: r.upiId || '',
+        status: r.status,
+        restaurantsAdded: count.added,
+        activeRestaurants: count.active,
+        commissionEarned: commission.totalCommission,
+        pendingRequestCount: r._count?.leads ?? 0,
+        createdAt: r.createdAt.toISOString(),
+      };
     });
-    return rows.map((r) => this.toAdminSalesPersonDto(r));
   }
 
   async adminGetPendingLeads(salesPersonId: string) {

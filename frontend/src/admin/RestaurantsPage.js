@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import ListPagination, { readPage } from '../components/ListPagination';
 import Loader from '../components/Loader';
 import {
   activateRestaurant,
@@ -58,26 +59,43 @@ export default function RestaurantsPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await getRestaurants({ search, status });
-      setRows(data);
-    } catch (err) {
-      setError(err.message || 'Failed to load restaurants.');
-    } finally {
-      setLoading(false);
-    }
-  }, [search, status]);
+  const [reloadKey, setReloadKey] = useState(0);
+  const filterKey = `${search}\0${status}`;
+  const lastFilter = useRef(filterKey);
 
   useEffect(() => {
-    const t = setTimeout(load, 200);
-    return () => clearTimeout(t);
-  }, [load]);
+    const filterChanged = lastFilter.current !== filterKey;
+    if (filterChanged) lastFilter.current = filterKey;
+    const requestPage = filterChanged ? 1 : page;
+    if (filterChanged && page !== 1) {
+      setPage(1);
+      return undefined;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await getRestaurants({ search, status, page: requestPage });
+        if (cancelled) return;
+        const parsed = readPage(data);
+        setRows(parsed.items);
+        setMeta(parsed);
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Failed to load restaurants.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [filterKey, page, reloadKey, search, status]);
 
   const runConfirmAction = async () => {
     if (!confirm) return;
@@ -94,7 +112,7 @@ export default function RestaurantsPage() {
         push('Restaurant activated.');
       }
       setConfirm(null);
-      await load();
+      setReloadKey((n) => n + 1);
     } catch (err) {
       push(err.message || 'Action failed.', 'error');
     } finally {
@@ -258,6 +276,15 @@ export default function RestaurantsPage() {
           </tbody>
         </table>
       </div>
+
+      <ListPagination
+        page={meta.page}
+        totalPages={meta.totalPages}
+        total={meta.total}
+        noun="restaurants"
+        disabled={loading}
+        onPage={setPage}
+      />
 
       <ConfirmDialog
         open={Boolean(confirm)}

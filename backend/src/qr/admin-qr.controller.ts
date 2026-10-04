@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AppRole } from '../common/constants';
@@ -19,8 +20,8 @@ export class AdminQrController {
   constructor(private readonly qrCodes: QrCodesService) {}
 
   @Get('qr')
-  list() {
-    return this.qrCodes.listAdmin();
+  list(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.qrCodes.listAdmin({ page, limit });
   }
 
   @Post('qr/backfill')

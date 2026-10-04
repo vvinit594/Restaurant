@@ -25,10 +25,12 @@ export async function getSubscriptionPlans() {
   });
 }
 
-export async function getRestaurants({ search = '', status = 'all' } = {}) {
+export async function getRestaurants({ search = '', status = 'all', page = 1, limit } = {}) {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
   if (status) params.set('status', status);
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
   const qs = params.toString();
   return apiRequest(`/admin/restaurants${qs ? `?${qs}` : ''}`, {
     method: 'GET',
