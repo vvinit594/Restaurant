@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../admin/components/Toast';
-import { IMAGE_ACCEPT, uploadImage } from '../services/mediaApi';
+import { uploadImage } from '../services/mediaApi';
 import {
   BULK_API_BATCH_SIZE,
   BULK_UPLOAD_CONCURRENCY,
@@ -10,10 +10,8 @@ import {
   downloadBulkDishTemplate,
   downloadBulkErrorReport,
   extractImagesFromZip,
-  indexImageFiles,
   parseBulkDishExcel,
   revokePreviewThumbs,
-  supportsDirectoryUpload,
   validateBulkPreview,
 } from '../services/bulkDishImport';
 import {
@@ -40,17 +38,14 @@ const EMPTY_IMAGES = {
   totalBytes: 0,
   totalBytesLabel: '0 B',
   scannedCount: 0,
-  source: 'folder',
+  source: 'zip',
 };
 
 export default function BulkDishesAddPage() {
   const { user } = useRestaurantAuth();
   const { push } = useToast();
   const excelInputRef = useRef(null);
-  const folderInputRef = useRef(null);
   const zipInputRef = useRef(null);
-  const manualInputRef = useRef(null);
-  const folderSupported = useMemo(() => supportsDirectoryUpload(), []);
 
   const [step, setStep] = useState(STEP_UPLOAD);
   const [categories, setCategories] = useState([]);
@@ -149,17 +144,6 @@ export default function BulkDishesAddPage() {
     }
   };
 
-  const onFolderChange = (e) => {
-    const files = e.target.files;
-    e.target.value = '';
-    if (!files?.length) return;
-    const indexed = indexImageFiles(files, { source: 'folder' });
-    applyImageIndex(
-      indexed,
-      `✓ ${indexed.count} image${indexed.count === 1 ? '' : 's'} detected in folder.`,
-    );
-  };
-
   const onZipChange = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -176,17 +160,6 @@ export default function BulkDishesAddPage() {
     } finally {
       setZipBusy(false);
     }
-  };
-
-  const onManualImagesChange = (e) => {
-    const files = e.target.files;
-    e.target.value = '';
-    if (!files?.length) return;
-    const indexed = indexImageFiles(files, { source: 'manual' });
-    applyImageIndex(
-      indexed,
-      `${indexed.count} image${indexed.count === 1 ? '' : 's'} selected.`,
-    );
   };
 
   const onValidatePreview = async () => {
@@ -465,7 +438,7 @@ export default function BulkDishesAddPage() {
         <div>
           <h1>Bulk Add Dishes</h1>
           <p className="admin-muted">
-            Add hundreds of dishes at once using an Excel spreadsheet and a folder of
+            Add hundreds of dishes at once using an Excel spreadsheet and a ZIP of
             matching image files. Saving to <strong>{user?.restaurantName}</strong> only.
           </p>
         </div>
@@ -480,7 +453,7 @@ export default function BulkDishesAddPage() {
             <li>Download Template</li>
             <li>Fill Excel</li>
             <li>Select Excel</li>
-            <li>Select Image Folder</li>
+            <li>Upload Image ZIP</li>
             <li>Validate &amp; Preview</li>
             <li>Import Dishes</li>
           </ol>
@@ -531,20 +504,11 @@ export default function BulkDishesAddPage() {
           <div className="bulk-section">
             <h2>3. Select Dish Image Folder</h2>
             <p className="admin-muted">
-              Select the folder containing all dish images. Filenames must match the{' '}
-              <code>imageFile</code> column in Excel (nested folders are OK). Images are
-              not uploaded until you confirm import.
+              Upload a ZIP file containing all dish images. Filenames must match the{' '}
+              <code>imageFile</code> column in Excel (nested folders inside the ZIP are
+              OK). Images are not uploaded until you confirm import.
             </p>
 
-            <input
-              ref={folderInputRef}
-              type="file"
-              accept={IMAGE_ACCEPT}
-              multiple
-              {...{ webkitdirectory: '', directory: '' }}
-              hidden
-              onChange={onFolderChange}
-            />
             <input
               ref={zipInputRef}
               type="file"
@@ -552,44 +516,15 @@ export default function BulkDishesAddPage() {
               hidden
               onChange={onZipChange}
             />
-            <input
-              ref={manualInputRef}
-              type="file"
-              accept={IMAGE_ACCEPT}
-              multiple
-              hidden
-              onChange={onManualImagesChange}
-            />
 
             <div className="bulk-image-actions">
-              {folderSupported ? (
-                <button
-                  type="button"
-                  className="admin-btn admin-btn-primary"
-                  onClick={() => folderInputRef.current?.click()}
-                >
-                  Select Image Folder
-                </button>
-              ) : (
-                <p className="bulk-warn">
-                  Folder selection is not supported in this browser. Use ZIP upload or
-                  select images manually.
-                </p>
-              )}
               <button
                 type="button"
-                className="admin-btn admin-btn-ghost"
+                className="admin-btn admin-btn-primary"
                 disabled={zipBusy}
                 onClick={() => zipInputRef.current?.click()}
               >
-                {zipBusy ? 'Reading ZIP…' : 'Upload ZIP'}
-              </button>
-              <button
-                type="button"
-                className="admin-btn admin-btn-ghost"
-                onClick={() => manualInputRef.current?.click()}
-              >
-                Select Images Manually
+                {zipBusy ? 'Reading ZIP…' : 'Upload ZIP File'}
               </button>
             </div>
 
@@ -597,11 +532,7 @@ export default function BulkDishesAddPage() {
               <div className="bulk-image-summary">
                 <p className="bulk-file-ok">
                   ✓ {imageIndex.count} image{imageIndex.count === 1 ? '' : 's'} detected
-                  {imageIndex.source === 'zip'
-                    ? ' (from ZIP)'
-                    : imageIndex.source === 'manual'
-                      ? ' (manual)'
-                      : ' (from folder)'}
+                  {' '}(from ZIP)
                 </p>
                 <ul className="bulk-type-stats">
                   <li>JPG {imageIndex.byType?.jpg || 0}</li>
@@ -652,7 +583,7 @@ export default function BulkDishesAddPage() {
                           <div>
                             <strong>Missing Images</strong>
                             <p className="admin-muted">
-                              Referenced by Excel but not found in the selected folder.
+                              Referenced by Excel but not found in the ZIP.
                               Those rows will not be marked valid.
                             </p>
                             <ul className="bulk-image-list">
@@ -669,7 +600,7 @@ export default function BulkDishesAddPage() {
                           <div>
                             <strong>Extra Images</strong>
                             <p className="admin-muted">
-                              Present in the folder but not referenced by Excel. They will
+                              Present in the ZIP but not referenced by Excel. They will
                               not be uploaded.
                             </p>
                             <ul className="bulk-image-list">
