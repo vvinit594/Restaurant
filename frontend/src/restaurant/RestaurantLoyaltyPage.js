@@ -66,6 +66,8 @@ export default function RestaurantLoyaltyPage() {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('recent');
   const [programsLoading, setProgramsLoading] = useState(true);
+  const [programsError, setProgramsError] = useState('');
+  const [programsReload, setProgramsReload] = useState(0);
   const [programs, setPrograms] = useState([]);
   const [contactModal, setContactModal] = useState({ open: false, mode: 'create', customer: null });
   const [contactForm, setContactForm] = useState(INITIAL_CONTACT);
@@ -116,11 +118,14 @@ export default function RestaurantLoyaltyPage() {
     let alive = true;
     (async () => {
       setProgramsLoading(true);
+      setProgramsError('');
       try {
         const data = await getLoyaltyPrograms();
-        if (alive) setPrograms(data.items || []);
+        if (!alive) return;
+        setPrograms(Array.isArray(data?.items) ? data.items : []);
       } catch (err) {
-        if (alive) push(err.message || 'Failed to load loyalty programs.', 'error');
+        if (!alive) return;
+        setProgramsError(err.message || 'Unable to load loyalty programs.');
       } finally {
         if (alive) setProgramsLoading(false);
       }
@@ -128,7 +133,7 @@ export default function RestaurantLoyaltyPage() {
     return () => {
       alive = false;
     };
-  }, [view, push]);
+  }, [view, programsReload]);
 
   async function loadCustomers(nextPage = pageInfo.page || 1) {
     setListLoading(true);
@@ -590,10 +595,30 @@ export default function RestaurantLoyaltyPage() {
             ) : null}
           </section>
         </>
-      ) : (
+      ) : null}
+
+      {view === 'programs' ? (
         <section className="admin-panel">
           {programsLoading ? <Loader label="Loading loyalty programs…" /> : null}
-          {!programsLoading ? (
+          {!programsLoading && programsError ? (
+            <div className="admin-empty">
+              <h3>Unable to load loyalty programs.</h3>
+              <p>{programsError}</p>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                onClick={() => setProgramsReload((n) => n + 1)}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {!programsLoading && !programsError && programs.length === 0 ? (
+            <div className="admin-empty">
+              <h3>No loyalty programs found.</h3>
+            </div>
+          ) : null}
+          {!programsLoading && !programsError && programs.length > 0 ? (
             <div className="loyalty-program-grid">
               <p className="admin-muted loyalty-program-count">
                 Active programs: {programs.filter((program) => program.enabled).length}
@@ -642,7 +667,7 @@ export default function RestaurantLoyaltyPage() {
             </div>
           ) : null}
         </section>
-      )}
+      ) : null}
 
       <ContactModal
         open={contactModal.open}
