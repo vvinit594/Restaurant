@@ -11,3 +11,30 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/*
+  Native <option> menus on Windows Chrome/Edge stay light.
+  DilYum body and panel text is near-white, so options inherit that color
+  and disappear on the light menu until the hover highlight appears.
+  Keep the closed control's own colors; force the popup to a light scheme
+  with the same dark text used on cream form surfaces.
+*/
+select {
+  color-scheme: light;
+}
+
+select option,
+select optgroup {
+  background-color: #fff;
+  color: #1f1a17;
+}
+
+select option:checked {
+  background-color: #fffbeb;
+  color: #1f1a17;
+}
+
+select option:disabled {
+  background-color: #fff;
+  color: #6b5c52;
+}

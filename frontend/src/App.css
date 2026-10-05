@@ -752,11 +752,6 @@ body {
   font-family: inherit;
 }
 
-.price-select option {
-  background: #2a1a10;
-  color: #fff;
-}
-
 .category-scroll-strip {
   display: flex;
   gap: 10px;

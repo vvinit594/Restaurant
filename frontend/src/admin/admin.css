@@ -1788,7 +1788,6 @@ button.loyalty-status-toggle .dy-loader-spinner {
   padding: 0 14px;
   font: inherit;
   font-size: 14px;
-  color-scheme: dark;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
