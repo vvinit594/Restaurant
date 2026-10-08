@@ -121,17 +121,7 @@ export class OrdersService {
       merged.set(line.dishId, (merged.get(line.dishId) || 0) + qty);
     }
 
-    const table = await this.prisma.diningTable.findFirst({
-      where: {
-        id: dto.tableId,
-        restaurantId: restaurant.id,
-        deletedAt: null,
-        isActive: true,
-      },
-    });
-    if (!table) {
-      throw new BadRequestException('Invalid or inactive table for this restaurant.');
-    }
+    const table = await this.resolveOrderTable(restaurant.id, dto);
 
     const dishIds = [...merged.keys()];
     const dishes = await this.prisma.dish.findMany({
@@ -655,6 +645,72 @@ export class OrdersService {
       todaysOrders,
       todaysRevenue: Number(todaysRevenueAgg._sum.total || 0),
     };
+  }
+
+  private async resolveOrderTable(restaurantId: string, dto: CreatePublicOrderDto) {
+    if (dto.tableNumber) {
+      return this.resolveManualTable(restaurantId, dto.tableNumber);
+    }
+    if (!dto.tableId) {
+      throw new BadRequestException('Please enter a valid table number.');
+    }
+    const table = await this.prisma.diningTable.findFirst({
+      where: {
+        id: dto.tableId,
+        restaurantId,
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+    if (!table) {
+      throw new BadRequestException('Invalid or inactive table for this restaurant.');
+    }
+    return table;
+  }
+
+  /**
+   * Reuse the dining table whose code or label matches the typed number.
+   * Create one when the restaurant has no row for that number yet.
+   */
+  private async resolveManualTable(restaurantId: string, tableNumber: string) {
+    const label = String(Number(tableNumber));
+    const existing = await this.prisma.diningTable.findFirst({
+      where: {
+        restaurantId,
+        deletedAt: null,
+        OR: [{ code: label }, { label }],
+      },
+    });
+    if (existing) {
+      if (!existing.isActive) {
+        throw new BadRequestException('This table is not available.');
+      }
+      return existing;
+    }
+
+    const sortOrder = Number(label);
+    try {
+      return await this.prisma.diningTable.create({
+        data: {
+          restaurantId,
+          label,
+          code: label,
+          sortOrder: sortOrder <= 2147483647 ? sortOrder : 2147483647,
+          isActive: true,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const raced = await this.prisma.diningTable.findFirst({
+          where: { restaurantId, deletedAt: null, code: label },
+        });
+        if (raced?.isActive) return raced;
+        if (raced) {
+          throw new BadRequestException('This table is not available.');
+        }
+      }
+      throw err;
+    }
   }
 
   private async findActiveRestaurantBySlug(slug: string) {

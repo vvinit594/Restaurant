@@ -1,10 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Loader from './Loader';
-import { getPublicRestaurantTables, placePublicOrder } from '../services/ordersApi';
+import { placePublicOrder } from '../services/ordersApi';
 
 /**
- * Checkout flow: select table → confirm summary → place order.
+ * A table number is a positive integer. Leading zeros are ignored.
+ * Returns the normalized number when valid.
+ */
+export function parseTableNumber(raw) {
+  const value = String(raw ?? '').trim();
+  if (!value) return { valid: false, empty: true, number: '' };
+  if (!/^\d+$/.test(value)) return { valid: false, empty: false, number: '' };
+  const number = String(Number(value));
+  if (!/^[1-9]\d{0,11}$/.test(number)) return { valid: false, empty: false, number: '' };
+  return { valid: true, empty: false, number };
+}
+
+/**
+ * Checkout flow: enter table number → confirm summary → place order.
  */
 export default function OrderCheckoutModal({
   open,
@@ -15,10 +27,9 @@ export default function OrderCheckoutModal({
   onSuccess,
 }) {
   const [step, setStep] = useState('table'); // table | confirm | success
-  const [tables, setTables] = useState([]);
-  const [tableId, setTableId] = useState('');
+  const [tableInput, setTableInput] = useState('');
+  const [tableNumber, setTableNumber] = useState('');
   const [couponCode, setCouponCode] = useState('');
-  const [loadingTables, setLoadingTables] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [placed, setPlaced] = useState(null);
@@ -27,30 +38,17 @@ export default function OrderCheckoutModal({
     (sum, i) => sum + Number(i.price) * Number(i.quantity),
     0,
   );
-  const selectedTable = tables.find((t) => t.id === tableId);
+  const parsedTable = parseTableNumber(tableInput);
 
   useEffect(() => {
     if (!open) return undefined;
     setStep('table');
     setError('');
     setPlaced(null);
-    setTableId('');
+    setTableInput('');
+    setTableNumber('');
     setCouponCode('');
-    let alive = true;
-    (async () => {
-      setLoadingTables(true);
-      try {
-        const data = await getPublicRestaurantTables(restaurantSlug);
-        if (alive) setTables(data.tables || []);
-      } catch (err) {
-        if (alive) setError(err.message || 'Could not load tables.');
-      } finally {
-        if (alive) setLoadingTables(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+    return undefined;
   }, [open, restaurantSlug]);
 
   useEffect(() => {
@@ -70,16 +68,14 @@ export default function OrderCheckoutModal({
   if (!open) return null;
 
   const goConfirm = () => {
-    if (!tableId) {
-      setError('Please select a table number.');
-      return;
-    }
+    if (!parsedTable.valid) return;
+    setTableNumber(parsedTable.number);
     setError('');
     setStep('confirm');
   };
 
   const confirmOrder = async () => {
-    if (submitting) return;
+    if (submitting || !tableNumber) return;
     setSubmitting(true);
     setError('');
     try {
@@ -88,7 +84,7 @@ export default function OrderCheckoutModal({
           ? crypto.randomUUID()
           : `ord_${Date.now()}_${Math.random().toString(36).slice(2)}`;
       const order = await placePublicOrder(restaurantSlug, {
-        tableId,
+        tableNumber,
         idempotencyKey,
         couponCode: couponCode.trim() || undefined,
         items: items.map((i) => ({
@@ -107,13 +103,17 @@ export default function OrderCheckoutModal({
   };
 
   return (
-    <div className="order-cart-overlay" onClick={() => !submitting && onClose()} role="presentation">
+    <div
+      className="order-cart-overlay order-checkout-overlay"
+      onClick={() => !submitting && onClose()}
+      role="presentation"
+    >
       <div
         className="order-checkout-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Checkout"
+        aria-labelledby="checkout-title"
       >
         <button
           type="button"
@@ -127,27 +127,42 @@ export default function OrderCheckoutModal({
 
         {step === 'table' ? (
           <>
-            <h3>Select Table</h3>
+            <h3 id="checkout-title">Select Table</h3>
             <p className="order-cart-rest">{restaurantName}</p>
-            {loadingTables ? <Loader variant="inline" label="Loading tables…" /> : null}
+            <label className="order-table-field" htmlFor="table-number">
+              Table Number
+              <input
+                id="table-number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                enterKeyHint="done"
+                placeholder="Enter table number"
+                value={tableInput}
+                onChange={(e) => setTableInput(e.target.value)}
+                aria-invalid={parsedTable.empty ? undefined : !parsedTable.valid}
+                aria-describedby={
+                  !parsedTable.empty && !parsedTable.valid ? 'table-number-error' : undefined
+                }
+              />
+            </label>
+            {!parsedTable.empty && !parsedTable.valid ? (
+              <p id="table-number-error" className="order-table-hint" role="alert">
+                Please enter a valid table number.
+              </p>
+            ) : null}
             {error ? <div className="order-error">{error}</div> : null}
-            <div className="order-table-grid">
-              {tables.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={`order-table-chip ${tableId === t.id ? 'active' : ''}`}
-                  onClick={() => setTableId(t.id)}
-                >
-                  Table {t.label}
-                </button>
-              ))}
-            </div>
             <div className="order-checkout-actions">
-              <button type="button" className="admin-btn admin-btn-ghost" onClick={onClose}>
+              <button type="button" className="order-btn order-btn-secondary" onClick={onClose}>
                 Back
               </button>
-              <button type="button" className="admin-btn admin-btn-primary" onClick={goConfirm} disabled={!tableId}>
+              <button
+                type="button"
+                className="order-btn order-btn-primary"
+                onClick={goConfirm}
+                disabled={!parsedTable.valid}
+              >
                 Continue
               </button>
             </div>
@@ -156,11 +171,11 @@ export default function OrderCheckoutModal({
 
         {step === 'confirm' ? (
           <>
-            <h3>Confirm Order</h3>
+            <h3 id="checkout-title">Confirm Order</h3>
             <p className="order-cart-rest">
               Restaurant: <strong>{restaurantName}</strong>
               <br />
-              Table: <strong>{selectedTable?.label}</strong>
+              Table: <strong>{tableNumber}</strong>
             </p>
             <ul className="order-summary-list">
               {items.map((i) => (
@@ -189,7 +204,7 @@ export default function OrderCheckoutModal({
             <div className="order-checkout-actions">
               <button
                 type="button"
-                className="admin-btn admin-btn-ghost"
+                className="order-btn order-btn-secondary"
                 onClick={() => setStep('table')}
                 disabled={submitting}
               >
@@ -197,7 +212,7 @@ export default function OrderCheckoutModal({
               </button>
               <button
                 type="button"
-                className="admin-btn admin-btn-primary"
+                className="order-btn order-btn-primary"
                 onClick={confirmOrder}
                 disabled={submitting}
               >
@@ -209,7 +224,7 @@ export default function OrderCheckoutModal({
 
         {step === 'success' && placed ? (
           <>
-            <h3>Order placed successfully</h3>
+            <h3 id="checkout-title">Order placed successfully</h3>
             <div className="order-success-card">
               <p>
                 Order <strong>#{placed.orderNumber}</strong>
@@ -218,10 +233,10 @@ export default function OrderCheckoutModal({
               <p className="order-cart-rest">Your order has been sent to the restaurant.</p>
             </div>
             <div className="order-checkout-actions">
-              <Link to="/account/orders/live" className="admin-btn admin-btn-ghost">
+              <Link to="/account/orders/live" className="order-btn order-btn-secondary">
                 Track order
               </Link>
-              <button type="button" className="admin-btn admin-btn-primary" onClick={onClose}>
+              <button type="button" className="order-btn order-btn-primary" onClick={onClose}>
                 Done
               </button>
             </div>

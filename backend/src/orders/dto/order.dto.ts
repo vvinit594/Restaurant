@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -24,9 +25,19 @@ export class CreateOrderItemDto {
 }
 
 export class CreatePublicOrderDto {
+  @Transform(({ value }) => {
+    if (value == null) return undefined;
+    const trimmed = String(value).trim();
+    return trimmed === '' ? undefined : trimmed;
+  })
+  @IsOptional()
+  @Matches(/^[1-9]\d{0,11}$/, { message: 'Please enter a valid table number.' })
+  tableNumber?: string;
+
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  tableId!: string;
+  tableId?: string;
 
   @IsArray()
   @ArrayMinSize(1)
